@@ -1,0 +1,25 @@
+# Copy to /etc/systemd/system/ and enable/start/stop/status
+#
+#	sudo cp gw-sensor-bridge.service /etc/systemd/system/
+#
+# 	sudo systemctl enable gw-sensor-bridge.service
+#	sudo systemctl start gw-sensor-bridge.service
+# 	sudo systemctl stop gw-sensor-bridge.service
+#	sudo systemctl status gw-sensor-bridge.service
+#
+#   can also use "sudo service gw-sensor-bridge start", etc...
+
+[Unit]
+Description=Service Running Gateway Sensor Bridge 
+After=networking.service
+
+[Service]
+ExecStart=/home/pi/gateway-p4/@current/SensorBridge/SensorBridge
+Restart=always
+RestartSec=60
+StandardOutput=syslog
+StandardError=syslog
+
+[Install]
+WantedBy=multi-user.target
+

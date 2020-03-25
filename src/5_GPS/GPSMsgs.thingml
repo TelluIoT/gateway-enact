@@ -1,0 +1,24 @@
+import "datatypes.thingml" from stl
+import "mqtt/posix/PosixMQTTAdapter.thingml" from stl
+
+thing fragment GPSMsgs {
+	
+	
+	/*
+	 * gps status:
+	 * 	- 0 No fix
+	 *  - 1 Fix
+	 * 	- 2 DGPS Fix
+	 */
+	
+	message gps_status(timestamp : Long, status : UInt8, satellites_visible : UInt8, satellites_used : UInt8)
+	
+	message gps_position(timestamp : Long, gpstime : Long,
+							latitude : Double, latitude_err : Double, 
+							longitude : Double, longitude_err : Double, 
+							speed : Double, speed_err : Double,
+							track : Double, track_err : Double)
+	
+	message gps_altitude(timestamp : Long,	altitude : Double, altitude_err : Double, vspeed : Double,  vspeed_err : Double)
+	
+}

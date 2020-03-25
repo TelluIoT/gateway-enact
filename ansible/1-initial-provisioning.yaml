@@ -1,0 +1,19 @@
+ - import_playbook: ./playbooks/1-1-ssh_authorized_key.yaml
+ - import_playbook: ./playbooks/1-2-change_password.yaml
+ - import_playbook: ./playbooks/1-3-ssh-hardening.yaml
+ - import_playbook: ./playbooks/1-4-hostname.yaml
+ - import_playbook: ./playbooks/1-5-motd.yaml
+
+# Uncomment if using Compulab hardware
+# - import_playbook: ./playbooks/1-6-install_compulab_drivers.yaml
+
+ - import_playbook: ./playbooks/1-7-install_dependencies.yaml
+ - import_playbook: ./playbooks/1-8-install_docker.yaml
+
+ - import_playbook: ./playbooks/2-2-install_configuration.yaml
+
+# - import_playbook: ./playbooks/1-9-setup_vpn_client.yaml
+# - import_playbook: ./playbooks/docker_containers.yaml
+# - import_playbook: ./playbooks/firewall.yaml
+# - import_playbook: ./playbooks/install_config_file.yaml
+# - import_playbook: ./playbooks/install_services_descriptions.yaml

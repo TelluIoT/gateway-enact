@@ -1,0 +1,16 @@
+- hosts: gateways
+  tasks:
+  - name: Reboot gateways
+    shell: "sleep 5 && reboot"
+    async: 1
+    poll: 0
+
+  - name: Wait for the reboot to complete.
+    wait_for_connection:
+      connect_timeout: 20
+      sleep: 5
+      delay: 15
+      timeout: 300
+
+    # - name: Waiting for gateways to come back
+    #   local_action: wait_for host={{ ansible_ssh_host }} state=started

@@ -1,0 +1,17 @@
+import "BLEGatewayMsgs.thingml"
+
+thing BLEGatewayPort includes BLEGatewayMsgs {
+	
+	required port local {
+		sends  ble_activity, ble_error, heartbeat_ble, ruuvi_measurement
+}
+
+
+}
+thing BLEGatewayPortExt includes BLEGatewayMsgs {
+	provided port localext 
+	@external "posixmqttjson"
+	{
+		receives ble_activity, ble_error, heartbeat_ble, ruuvi_measurement
+	}
+}

@@ -1,0 +1,93 @@
+import "HCIMessages.thingml"
+
+thing fragment HCIController includes HCIControllerMsgs
+{
+  required port HCICommands
+  {
+    sends Reset
+    sends SetEventMask,SetEventMaskAll
+    sends SetLocalName
+    sends Disconnect
+    sends SetLEEventMask,SetLEEventMaskAll
+    sends SetLEAdvertisementParameters
+    sends SetLEAdvertiseEnable
+    sends SetLEAdvertisingData
+    sends SetLEScanResponseData
+    sends SetLEScanParameters
+    sends SetLEScanEnable
+    sends LECreateConnection, LECreateConnectionCancel
+    sends LERand
+    sends LEEncrypt
+    sends LEStartEncryption
+  }
+
+  required port HCIEvents
+  {
+    receives ResetCompleted
+    receives SetEventMaskCompleted
+    receives SetLocalNameCompleted
+    receives DisconnectStatus
+    receives DisconnectionCompleted
+    receives SetLEEventMaskCompleted
+    receives SetLEAdvertisementParametersCompleted
+    receives SetLEAdvertiseEnableCompleted
+    receives SetLEAdvertisingDataCompleted
+    receives SetLEScanResponseDataCompleted
+    receives SetLEScanParametersCompleted
+    receives SetLEScanEnableCompleted
+    receives LEAdvertisementReport
+    receives LECreateConnectionStatus, LECreateConnectionCancelCompleted
+    receives LEConnectionComplete, LEEnhancedConnectionComplete
+    receives LERandCompleted
+    receives LEEncryptCompleted
+    receives EncryptionChanged
+    receives LEStartEncryptionStatus
+  }
+}
+
+thing fragment HCIControllerProxy includes HCIControllerMsgs
+{
+  provided port Commands
+  {
+    receives Reset
+    receives SetEventMask,SetEventMaskAll
+    receives SetLocalName
+    receives Disconnect
+    receives SetLEEventMask,SetLEEventMaskAll
+    receives SetLEAdvertisementParameters
+    receives SetLEAdvertiseEnable
+    receives SetLEAdvertisingData
+    receives SetLEScanResponseData
+    receives SetLEScanParameters
+    receives SetLEScanEnable
+    receives LECreateConnection, LECreateConnectionCancel
+    receives LERand
+    receives LEEncrypt
+    receives LEStartEncryption
+  }
+
+  provided port Events
+  {
+    sends ResetCompleted
+    sends SetEventMaskCompleted
+    sends SetLocalNameCompleted
+    sends DisconnectStatus
+    sends DisconnectionCompleted
+    sends SetLEEventMaskCompleted
+    sends SetLEAdvertisementParametersCompleted
+    sends SetLEAdvertiseEnableCompleted
+    sends SetLEAdvertisingDataCompleted
+    sends SetLEScanResponseDataCompleted
+    sends SetLEScanParametersCompleted
+    sends SetLEScanEnableCompleted
+    sends LEAdvertisementReport
+    sends LECreateConnectionStatus, LECreateConnectionCancelCompleted
+    sends LEConnectionComplete, LEEnhancedConnectionComplete
+    sends LERandCompleted
+    sends LEEncryptCompleted
+    sends EncryptionChanged
+    sends LEStartEncryptionStatus 
+  }
+
+
+}

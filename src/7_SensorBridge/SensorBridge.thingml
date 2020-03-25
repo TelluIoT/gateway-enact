@@ -1,0 +1,116 @@
+import "timer.thingml" from stl 
+import "SensorBridgeAdapterPortPosixMqttJson.thingml"
+import "NetworkMonitor.thingml" 
+
+
+thing SensorBridge includes SensorBridgePort, SensorClientPort, TimerMsgs, MQTTAdapterCtrlPort, NetworkMonitorMsgs {
+	
+	
+	readonly property build_version : String = "__NO_BUILD_VERSION__"
+	
+	readonly property timer_id : UInt8 = 1
+	
+	readonly property client_id : String = "FrontPanelBridge"
+	property broker_host : String = "localhost"
+	property broker_port : UInt16 = 1883
+	
+	required port clock {
+		receives timer_timeout
+		sends timer_start, timer_cancel
+	}
+	
+	required port netmon {
+		sends start_netmonitor, stop_netmonitor
+		receives network_heartbeat, network_connected, network_disconnected
+	}
+	
+	statechart FrontPanelBridgeSC init Bridging {
+	
+		on entry do
+			mqtt!mqtt_connect(client_id, broker_host, broker_port, false)
+		end
+	
+		// Respond to pings from the front panel 
+		internal event e : fpserial?ping_serial action do 
+			fpserial!pong_serial(e.seq + 1)
+		end
+		
+		state Bridging {
+			
+			
+			// Temperature of the microcontroller on the sensor
+			internal event e : fpserial?front_panel_hwmonitor action fpmqtt!front_panel_hwmonitor(e.temp, e.voltage)
+			
+			// Sensor values
+			internal event e : fpserial?adc_values action fpmqtt!adc_values(e.a0, e.a1, e.a2, e.a3)
+			
+			// Set sensor parameter
+			internal event e : fpmqtt?set_sensor_rate action fpserial!set_sensor_rate(e.ms)
+
+		}
+		
+		region LocalMQTTMonitor init DISCONNECTED {
+			state DISCONNECTED {
+				transition -> CONNECTED event mqtt?mqtt_connected
+			}
+			
+			state CONNECTED {
+				on entry do
+					fpserial!heartbeat_gateway(1)
+					clock!timer_start(timer_id, 800)
+				end
+				
+				transition -> CONNECTED event e : clock?timer_timeout guard e.id == timer_id
+				
+				transition -> DISCONNECTED event mqtt?mqtt_disconnected
+			}
+		}
+		
+		region NetworkMonitor init Active {
+			state Active {
+				
+				on entry netmon!start_netmonitor(5)
+				
+				internal event netmon?network_heartbeat action do
+					fpserial!heartbeat_network(true, 6)
+					fpmqtt!heartbeat_network(true, 6)
+				end
+
+			} 
+		}
+	}
+}
+
+
+protocol Serial @serializer "Binary"
+				@serial_baudrate "57600"
+				@reverse_endianness "true" // Reverse the endianness for messages sent on the serial line.
+				@serial_path_to_device "/dev/ttyFPSerial"; // TODO: use a UDEV rule to get a fixed path. 
+				
+				// UDEV Rule: SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6015", SYMLINK+="ttyFPSerial"
+				
+				
+configuration SensorBridge 
+	@add_c_libraries "mosquitto"
+	@add_c_modules "jsmn"
+{
+	instance bridge : SensorBridge
+		set bridge.timer_id = 1
+	instance mqttadapter : PosixMQTTAdapter
+	instance mqttserializer : SensorBridgeAdapterPort_PosixMqttJson_Impl
+	instance mon : NetworkMonitor
+		set mon.timer_id = 2
+		
+	instance t : TimerPosix
+	
+	connector mqttserializer.posixmqtt => mqttadapter.mqtt
+	set mqttserializer.mqtt_topic_name = "TelluGW"
+	connector bridge.fpmqtt => mqttserializer.fpmqtt
+	
+	connector mon.clock => t.timer
+	connector bridge.netmon => mon.monitor
+	
+	connector bridge.mqtt => mqttadapter.mqtt
+	connector bridge.fpserial over Serial
+	connector bridge.clock => t.timer
+}

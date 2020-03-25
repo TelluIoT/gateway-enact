@@ -1,0 +1,53 @@
+- hosts: gateways
+  tasks:
+
+    - name: Install dependencies
+      apt:
+        name:
+          - ppp
+        state: latest
+        update_cache: yes
+
+    - name: Install udev rule
+      copy:
+        src: ../public-files/udev/99-wwan.rules
+        dest: /etc/udev/rules.d/99-wwan.rules
+        force: yes
+        owner: root
+        group: root
+        mode: 0644
+
+    - name: Reload udev rules
+      command: "udevadm control --reload-rules"
+      become: true
+
+    - name: Trigger udev rules
+      command: "udevadm trigger"
+      become: true
+
+    - name: Creates directory for modem scripts (/etc/chatscripts)
+      file:
+        path: /etc/chatscripts
+        state: directory
+        owner: root
+        group: root
+        mode: 0775
+
+    - name: Copy modem initialization and cleanup scripts
+      copy: 
+        src: "{{item}}"
+        dest: /etc/chatscripts/
+        force: true
+      with_items:
+        - "../public-files/modem/gsm_off.SIM7100"
+        - "../public-files/modem/sunrise.SIM7100"
+
+    - name: Install LTE network interface
+      copy:
+        src: "../public-files/modem/lte0"
+        dest: "/etc/network/interfaces.d/lte0"
+        force: true
+    
+    # - name: restart networking interfaces of lte0
+    #   become: true
+    #   command: bash -c "ifdown lte0 && ifup lte0"

@@ -1,0 +1,74 @@
+import "../Datatypes.thingml"
+import "HCIDatatypes.thingml"
+
+thing fragment HCIControllerMsgs
+{
+  /* --- BR/EDR commands --- */
+  /* Controller configuration */
+  message Reset();
+  message ResetCompleted(NumberAllowedCommandPackets : Byte, Status : Byte);
+
+  message SetEventMask(Mask : HCIEventMask);
+  message SetEventMaskAll();
+  message SetEventMaskCompleted(NumberAllowedCommandPackets : Byte, Status : Byte);
+
+  message SetLocalName(Name : BTLocalName);
+  message SetLocalNameCompleted(NumberAllowedCommandPackets : Byte, Status : Byte);
+
+  /* Connections */
+  message Disconnect(ConnectionHandle : UInt16, Reason : BTDisconnectReason);
+  message DisconnectStatus(NumberAllowedCommandPackets : Byte, Status : Byte);
+
+  message DisconnectionCompleted(Status : Byte, ConnectionHandle : UInt16, Reason : BTDisconnectReason);
+
+  /* Encryption */
+  message EncryptionChanged(Status : Byte, ConnectionHandle : UInt16, Enabled : Byte);
+
+  /* --- LE commands --- */
+  /* Controller configuration */
+  message SetLEEventMask(Mask : HCIEventMask);
+  message SetLEEventMaskAll();
+  message SetLEEventMaskCompleted(NumberAllowedCommandPackets : Byte, Status : Byte);
+
+  /* Advertisement */
+  message SetLEAdvertisementParameters(MinInterval : UInt16, MaxInterval : UInt16, Type : BLEAdvertisingType, OwnAddressType : BLEAddressType, PeerAddressType : BLEAddressType, PeerAddress : BTAddress, Channel : BLEAdvertisingChannel, FilterPolicy : BLEAdvertisingFilterPolicy);
+  message SetLEAdvertisementParametersCompleted(NumberAllowedCommandPackets : Byte, Status : Byte);
+
+  message SetLEAdvertiseEnable(Enable : Byte);
+  message SetLEAdvertiseEnableCompleted(NumberAllowedCommandPackets : Byte, Status : Byte);
+
+  message SetLEAdvertisingData(Length : Byte, Data : BLEAdvertiseData);
+  message SetLEAdvertisingDataCompleted(NumberAllowedCommandPackets : Byte, Status : Byte);
+
+  message SetLEScanResponseData(Length : Byte, Data : BLEAdvertiseData);
+  message SetLEScanResponseDataCompleted(NumberAllowedCommandPackets : Byte, Status : Byte);
+
+  message LEAdvertisementReport(Type : BLEAdvertisementReportType, AddressType : BLEAddressType, Address : BTAddress, Length : Byte, Data : BLEAdvertiseData, RSSI : Int8);
+
+  /* Scanning */
+  message SetLEScanParameters(Type : BLEScanType, Interval : UInt16, Window : UInt16, OwnAddressType : BLEAddressType, FilterPolicy : BLEScanFilterPolicy);
+  message SetLEScanParametersCompleted(NumberAllowedCommandPackets : Byte, Status : Byte);
+
+  message SetLEScanEnable(Enable : Byte, FilterDuplicates : Byte);
+  message SetLEScanEnableCompleted(NumberAllowedCommandPackets : Byte, Status : Byte);
+
+  /* Connections */
+  message LECreateConnection(Interval : UInt16, Window : UInt16, FilterPolicy : BLEInitiatorFilterPolicy, PeerAddressType : BLEAddressType, PeerAddress : BTAddress, OwnAddressType : BLEAddressType, ConnIntervalMin : UInt16, ConnIntervalMax : UInt16, ConnLatency : UInt16, SupervisionTimeout : UInt16, CELengthMin : UInt16, CELengthMax : UInt16);
+  message LECreateConnectionStatus(NumberAllowedCommandPackets : Byte, Status : Byte);
+
+  message LECreateConnectionCancel();
+  message LECreateConnectionCancelCompleted(NumberAllowedCommandPackets : Byte, Status : Byte);
+
+  message LEConnectionComplete(Status : Byte, ConnectionHandle : UInt16, Role : BLELinkRole, PeerAddressType : BLEAddressType, PeerAddress : BTAddress, ConnInterval : UInt16, ConnLatency : UInt16, SupervisionTimeout : UInt16, MasterClockAccuracy : Byte);
+  message LEEnhancedConnectionComplete(Status : Byte, ConnectionHandle : UInt16, Role : BLELinkRole, PeerAddressType : BLEAddressType, PeerAddress : BTAddress, LocalResolvablePrivateAddress : BTAddress, PeerResolvablePrivateAddress : BTAddress, ConnInterval : UInt16, ConnLatency : UInt16, SupervisionTimeout : UInt16, MasterClockAccuracy : Byte);
+
+  /* Encryption */
+  message LERand();
+  message LERandCompleted(NumberAllowedCommandPackets : Byte, Status : Byte, Random : BLERandomPart);
+
+  message LEEncrypt(Key : BLERandomNumber, Plaintext : BLERandomNumber);
+  message LEEncryptCompleted(NumberAllowedCommandPackets : Byte, Status : Byte, Encrypted : BLERandomNumber);
+
+  message LEStartEncryption(ConnectionHandle : UInt16, Random : BLERandomPart, EDIV : UInt16, LTK : BLERandomNumber);
+  message LEStartEncryptionStatus(NumberAllowedCommandPackets : Byte, Status : Byte);
+}

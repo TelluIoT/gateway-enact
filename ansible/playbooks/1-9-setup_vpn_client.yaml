@@ -1,0 +1,19 @@
+- name: Install and connect to the OpenVPN
+  hosts: gateways
+  tasks:
+    - name: Install OpenVPN
+      package:
+        name: openvpn
+        state: present
+    - name: Copy the VPN Client Certificate
+      copy:
+        src: ../private-files/vpn-clients/{{ inventory_hostname }}.ovpn
+        dest: /etc/openvpn/vpn_gateways.conf
+        owner: root
+        mode: 0600
+        backup: yes
+    - name: Enable the SystemD OpenVPN client
+      systemd:
+        enabled: yes
+        state: restarted
+        name: openvpn@vpn_gateways.service

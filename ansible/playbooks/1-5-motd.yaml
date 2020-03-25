@@ -1,0 +1,9 @@
+- hosts: gateways
+  tasks:
+    - name: Change banner to please Franck
+      copy:
+        src: ../public-files/tellu_iot.motd
+        dest: /etc/motd
+        owner: root
+        mode: 0644
+        #content: Welcome to the Tellu Gateway !

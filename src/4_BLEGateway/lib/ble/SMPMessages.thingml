@@ -1,0 +1,32 @@
+import "../Datatypes.thingml"
+import "SMPDatatypes.thingml"
+
+thing fragment SMPMsgs
+{
+  message SMPPairingRequest(Handle : UInt16, IOCapability : SMPIOCapabilities, OOBDataPresent : Boolean, Bonding : Boolean, MITM : Boolean, SecureConnection : Boolean, Keypress : Boolean, MaximumEncryptionKeySize : Byte, InitiatorKeyDistribution : SMPKeyDistribution, ResponderKeyDistribution : SMPKeyDistribution);
+  message SMPPairingResponse(Handle : UInt16, IOCapability : SMPIOCapabilities, OOBDataPresent : Boolean, Bonding : Boolean, MITM : Boolean, SecureConnection : Boolean, Keypress : Boolean, MaximumEncryptionKeySize : Byte, InitiatorKeyDistribution : SMPKeyDistribution, ResponderKeyDistribution : SMPKeyDistribution);
+
+  message SMPPairingConfirm(Handle : UInt16, ConfirmValue : BLERandomNumber);
+
+  message SMPPairingRandom(Handle : UInt16, RandomValue : BLERandomNumber);
+
+  message SMPPairingFailed(Handle : UInt16, Reason : SMPPairingFailReason);
+
+  message SMPPairingPublicKey(Handle : UInt16, KeyX : SMPPublicKey, KeyY : SMPPublicKey);
+
+  message SMPPairingDHKeyCheck(Handle : UInt16, DHKeyCheck : BLERandomNumber);
+
+  message SMPKeypressNotification(Handle : UInt16, Type : SMPKeypressNotification);
+
+  message SMPEncryptionInformation(Handle : UInt16, LongTermKey : BLERandomNumber);
+
+  message SMPMasterIdentification(Handle : UInt16, EDIV : UInt16, Rand : BLERandomPart);
+
+  message SMPIdentityInformation(Handle : UInt16, IdentityResolvingKey : BLERandomNumber);
+
+  message SMPIdentityAddressInformation(Handle : UInt16, AddressType : BLEAddressType, Address : BTAddress);
+
+  message SMPSigningInformation(Handle : UInt16, SignatureKey : BLERandomNumber);
+
+  message SMPSecurityRequest(Handle : UInt16, Bonding : Boolean, MITM : Boolean, SecureConnection : Boolean, Keypress : Boolean);
+}

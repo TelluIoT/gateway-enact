@@ -1,0 +1,136 @@
+import "timer.thingml" from stl
+import "GPSPortExtPosixMqttJson.thingml"
+
+thing GPSDClient includes GPSPort, TimerClientPort, MQTTAdapterCtrlPort 
+@c_header `#include <gps.h>"`
+@c_header `#include <math.h>` 
+
+@c_global ` 
+int rc;
+struct gps_data_t gpsdata;
+`
+{
+	
+	readonly property client_id : String = "GPSGateway"
+  	property broker_host : String = "localhost"
+  	property broker_port : UInt16 = 1883
+  	
+  	readonly property timer_id : UInt8 = 1
+	
+	
+	function getEpochTimeStamp() : UInt64 do
+		 // Read the UTC time
+	     `time_t utc = time(NULL);`
+	     return `utc` as UInt64
+	end
+	
+	/*
+	function readgps() 
+	@fork_linux_thread "true"
+	do
+		init_gps()
+		while(true) do
+			`gps_waiting (&gpsdata, 2000000);`
+			poll_gps()
+		end
+	end
+	 */
+	
+	function init_gps() do
+		`if ((rc = gps_open("localhost", "2947", &gpsdata)) == -1) {
+    		printf("Error Openning GPS code: %d, reason: %s\n", rc, gps_errstr(rc));
+    		exit(-1);
+		}
+		gps_stream(&gpsdata, WATCH_ENABLE | WATCH_JSON, NULL);
+		`
+	end
+	
+	function forward_last_gps_packet() do 
+	
+		var ts : UInt64 = getEpochTimeStamp()
+		var hasdata : Boolean  = false
+	
+		`while((rc = gps_read(&gpsdata)) != 0) {	// Get the last measurment in the buffer
+			if (rc == -1){
+	            printf("error occured reading gps data. code: %d, reason: %s\n", rc, gps_errstr(rc));
+	            exit(-1);
+	        }`
+	        hasdata = true
+	        `
+		}`
+        
+        if (hasdata) do
+	        
+	        local!gps_status(ts, `gpsdata.status` as UInt8, `gpsdata.satellites_visible` as UInt8, `gpsdata.satellites_used` as UInt8)
+	        
+	        if (`(gpsdata.status == STATUS_FIX) && (gpsdata.fix.mode == MODE_2D || gpsdata.fix.mode == MODE_3D)`) do
+	        
+	        	var gpstime : Long = `(long)gpsdata.fix.time`
+	        	
+	        	local!gps_position(ts, gpstime, `gpsdata.fix.latitude` as Double, `gpsdata.fix.epy` as Double, 
+	        						`gpsdata.fix.longitude` as Double, `gpsdata.fix.epx` as Double, 
+	        						`gpsdata.fix.speed` as Double, `gpsdata.fix.eps` as Double, 
+	        						`gpsdata.fix.track` as Double, `gpsdata.fix.epd` as Double)
+	        						
+	        	if (`gpsdata.fix.mode == MODE_3D`) do
+	        		local!gps_altitude(ts, `gpsdata.fix.altitude` as Double, `gpsdata.fix.epv` as Double, `gpsdata.fix.climb` as Double, `gpsdata.fix.epc` as Double)
+	        	end
+	        	
+	        end
+        end
+	end
+	
+	
+	
+	statechart init Wait {
+		
+		on entry do
+  			mqtt!mqtt_connect(client_id, broker_host, broker_port, false)
+  			init_gps()
+  		end
+		
+		
+		state Wait {
+			
+			on entry timer!timer_start(timer_id, 10000)
+			
+			transition -> ReadGPS event e : timer?timer_timeout guard  e.id == timer_id
+		}
+		
+		state ReadGPS {
+			on entry do
+				forward_last_gps_packet()
+			end
+			
+			transition -> Wait
+		}	
+	}
+}
+
+
+
+configuration GPSDClient
+	@compiler "posix"
+	@add_c_libraries "gps"
+	@add_c_libraries "mosquitto"
+	@add_c_modules "jsmn"
+//	@add_c_libraries "confuse"
+	{
+
+	instance timer : TimerPosix
+	instance app : GPSDClient
+	
+	instance serializer : GPSPortExt_PosixMqttJson_Impl
+	set serializer.mqtt_topic_name = "TelluGW"
+	
+	instance mqtt : PosixMQTTAdapter
+	
+	connector serializer.posixmqtt => mqtt.mqtt
+	connector app.mqtt => mqtt.mqtt
+	
+	connector app.local => serializer.localext
+	
+	connector app.timer => timer.timer
+
+	
+}

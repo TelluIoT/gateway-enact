@@ -1,0 +1,97 @@
+- hosts: gateways
+  tasks:
+
+    - name: Install udev rule
+      copy:
+        src: "{{item}}"
+        dest: /etc/udev/rules.d/
+        force: yes
+        owner: root
+        group: root
+        mode: 0644
+      with_items:
+        - "../public-files/udev/99-gps-serial.rules"
+        - "../public-files/udev/99-usb-serial.rules"
+
+    - name: Reload udev rules
+      command: "udevadm control --reload-rules"
+      become: true
+
+    - name: Trigger udev rules
+      command: "udevadm trigger"
+      become: true
+
+    - name: Creates configuration directory (/etc/tellugw)
+      file:
+        path: /etc/tellugw
+        state: directory
+        owner: root
+        group: root
+        mode: 0775
+    
+    - name: Install configuration file
+      copy:
+        src: ../public-files/gateway.conf
+        dest: /etc/tellugw/gateway.conf
+        force: yes
+        owner: root
+        group: root
+        mode: 0644
+    
+    - name: Edit configuration file (setup the right gateway_id)
+      replace:
+        path: /etc/tellugw/gateway.conf
+        regexp: 'GATEWAYID'
+        replace: "{{ inventory_hostname }}"
+        backup: yes
+    
+    # - name: Copy certificates to connect to the MQTT backend
+    #   copy: 
+    #     src: "{{item}}"
+    #     dest: /etc/tellugw/
+    #   with_items:
+    #     - "../private-files/mqtt-clients/{{ inventory_hostname }}_cert.pem"
+    #     - "../private-files/mqtt-clients/{{ inventory_hostname }}_key.pem"
+    #     - "../private-files/mqtt-clients/tellucloud_ca_cacert.pem"
+    
+
+    - name: Create NetworkAgent script directory (/etc/tellugw/scripts)
+      file:
+        path: /etc/tellugw/scripts
+        state: directory
+        owner: root
+        group: root
+        mode: 0775
+
+    - name: Install NetworkAgent scripts in /etc/tellugw/scripts
+      copy:
+        src: ../public-files/scripts/{{ item }}
+        dest: /etc/tellugw/scripts/{{ item }}
+        force: yes
+        owner: root
+        group: root
+        mode: 0775
+      with_items:
+        - "check_network.sh"
+        - "restart_network.sh"
+        - "restart_system.sh"
+
+    - name: Install Gateway Service Descriptions
+      copy:
+        src: ../public-files/systemd/{{ item }}.service
+        dest:  /etc/systemd/system/
+        force: yes
+        owner: root
+        group: root
+        mode: 0644
+      with_items:
+        # - gw-cloud-agent
+        - gw-bluetooth
+        - gw-gps
+        - gw-sensor-bridge
+        - gw-network-agent
+        - gw-prometheus
+
+    - name: Reload Systemd
+      systemd:
+        daemon_reload: yes

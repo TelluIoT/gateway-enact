@@ -1,0 +1,12 @@
+*.retry
+*.ovpn
+# Do not push the ThingML compiler
+ThingML2CLI.jar
+
+# Do not push the thingml generated code
+thingml-gen/
+
+# Do not push the build directories
+build-tmp/
+build-output/
+

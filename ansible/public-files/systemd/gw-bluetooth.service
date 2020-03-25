@@ -1,0 +1,14 @@
+[Unit]
+Description=Service Running The BLE Gateway
+After=networking.service
+
+[Service]
+ExecStart=/home/pi/gateway-p4/@current/BLEGateway/BLEGateway
+Restart=always
+RestartSec=30
+StandardOutput=syslog
+StandardError=syslog
+
+[Install]
+WantedBy=multi-user.target
+

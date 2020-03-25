@@ -1,0 +1,11 @@
+- hosts: gateways
+  roles:
+    - geerlingguy.pip
+    - geerlingguy.docker
+  vars:
+    pip_install_packages:
+      - name: docker
+    docker_apt_arch: armhf
+    #docker_apt_arch: amd64
+    docker_users:
+      - pi

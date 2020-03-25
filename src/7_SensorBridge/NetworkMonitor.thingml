@@ -1,0 +1,90 @@
+import "timer.thingml" from stl 
+
+thing NetworkMonitorMsgs {
+	
+	message start_netmonitor(interval : UInt8);
+	message stop_netmonitor();
+	
+	message network_heartbeat();
+	message network_connected();
+	message network_disconnected();
+}
+
+thing NetworkMonitor includes TimerMsgs, NetworkMonitorMsgs
+@c_header "
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+"
+{
+	readonly property timer_id 	: UInt8 = 2
+	property delay : UInt8 = 5
+	property stoploop : Boolean = false
+	
+	required port clock {
+		receives timer_timeout
+		sends timer_start, timer_cancel
+	}
+	
+	provided port monitor {
+		receives start_netmonitor, stop_netmonitor
+		sends network_heartbeat, network_connected, network_disconnected
+	}
+	
+	function pingGoogle() : Boolean do
+		`int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+		uint8_t result = 0;
+		struct sockaddr_in addr = {AF_INET, htons(53), inet_addr("8.8.8.8")};
+	    struct timeval timeout;
+	    timeout.tv_sec = 1;
+	    timeout.tv_usec = 0;
+	    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
+		if (connect(sockfd, (struct sockaddr *) &addr, sizeof(addr)) == 0) result = 1; 
+		close(sockfd);`
+		return `result` as Boolean
+	end
+	
+	function startPingLoop() @fork_linux_thread "true"
+	do
+		var lastping : Boolean = pingGoogle()
+		if (lastping) monitor!network_connected()
+		else monitor!network_disconnected()
+		
+		stoploop = false
+		
+		while (not stoploop) do
+			if (pingGoogle()) do 
+				monitor!network_heartbeat()
+				if (lastping == false) monitor!network_connected()
+				lastping = true
+			end
+			else if (lastping == true) do
+				monitor!network_disconnected()
+				lastping = false
+			end
+			`sleep(`&delay&`);`
+		end
+		print "Network Monitor Thread has terminated.\n"
+	end
+	
+	function stopPingLoop() do
+		stoploop = true
+	end
+	
+	statechart NetworkMonitorSC init Idle {
+		
+		state Idle {
+			transition -> Active event e : monitor?start_netmonitor action do 
+				delay = e.interval
+				startPingLoop()
+			end
+		}
+		
+		state Active {
+			
+			transition -> Idle event e : monitor?stop_netmonitor action stopPingLoop()
+			
+		}
+	}
+}

@@ -1,0 +1,110 @@
+import "Compulab.thingml"
+
+thing CompulabTest includes CompulabMsgs, TimerClientPort {
+	
+	required port leds {
+		sends ledOn, ledOff, ledFlash, ledBlink
+	} 
+	
+	readonly property timer_id : UInt8 = 0
+	
+	statechart init Start {
+		
+		state Start {
+			
+			on entry do
+				leds!ledOn(1)
+				leds!ledOn(2)
+				timer!timer_start(timer_id, 2000)
+			end
+			transition -> S1 event e:timer?timer_timeout guard e.id == timer_id
+		}
+		
+		state S1 {
+			on entry do
+				leds!ledOff(1)
+				leds!ledOff(2)
+				timer!timer_start(timer_id, 1000)
+			end
+			transition -> S2 event e:timer?timer_timeout guard e.id == timer_id
+		}
+		
+		state S2 {
+			on entry do
+				leds!ledBlink(1, 750, 250)
+				leds!ledBlink(2, 250, 750)
+				timer!timer_start(timer_id, 5000)
+			end
+			transition -> S3 event e:timer?timer_timeout guard e.id == timer_id
+		}
+		
+		state S3 {
+			on entry do
+				leds!ledBlink(1, 250, 250)
+				leds!ledOff(2)
+				timer!timer_start(timer_id, 1000)
+			end
+			transition -> S4 event e:timer?timer_timeout guard e.id == timer_id
+		}
+		
+		state S4 {
+			on entry do
+				leds!ledFlash(2, 100)
+				timer!timer_start(timer_id, 1000)
+			end
+			transition -> S5 event e:timer?timer_timeout guard e.id == timer_id
+		}
+		
+		state S5 {
+			on entry do
+				leds!ledFlash(2, 100)
+				timer!timer_start(timer_id, 1000)
+			end
+			transition -> S6 event e:timer?timer_timeout guard e.id == timer_id
+		}
+		
+		state S6 {
+			on entry do
+				leds!ledOff(1)
+				leds!ledFlash(2, 100)
+				timer!timer_start(timer_id, 1000)
+			end
+			transition -> S7 event e:timer?timer_timeout guard e.id == timer_id
+		}
+		
+		state S7 {
+			on entry do
+				leds!ledFlash(1, 1000)
+				leds!ledBlink(2, 100, 100)
+				timer!timer_start(timer_id, 2000)
+			end
+			transition -> S1 event e:timer?timer_timeout guard e.id == timer_id
+		}	
+	}
+}
+
+configuration CompulabTest 
+@add_c_libraries "wiringPi"
+{
+	instance t : TimerPosix
+	
+	instance app : CompulabTest
+		set app.timer_id = 0
+	
+	instance led1 : LED
+		set led1.LED_ID = 1
+		set led1.timer_id = 1
+		set led1.LED_PIN = 42
+		
+	instance led2 : LED
+		set led2.LED_ID = 2
+		set led2.timer_id = 2
+		set led2.LED_PIN = 45
+		
+	connector app.leds => led1.ctrl
+	connector app.leds => led2.ctrl
+	
+	connector app.timer => t.timer
+	connector led1.timer => t.timer
+	connector led2.timer => t.timer
+}

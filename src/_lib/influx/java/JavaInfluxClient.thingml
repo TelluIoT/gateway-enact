@@ -1,0 +1,71 @@
+import "datatypes.thingml" from stl
+
+object JavaInfluxPoint 
+	@java_type `org.influxdb.dto.Point`
+	
+object JavaInfluxDB 
+	@java_type `org.influxdb.InfluxDB`
+
+thing fragment JavaInfluxClient
+@maven_dep `		
+	<dependency>
+		<groupId>org.influxdb</groupId>
+		<artifactId>influxdb-java</artifactId>
+		<version>2.14</version>
+	</dependency>`
+	
+@java_import `import org.influxdb.*;`
+@java_import `import org.influxdb.dto.*;`
+@java_import `import java.util.concurrent.TimeUnit;`
+@java_import `import java.util.logging.Level;`
+@java_import `import java.util.logging.Logger;`
+
+
+@java_features `protected InfluxDB _influxDB = null;`
+
+{
+	property influx_url : String
+	property influx_usr : String
+	property influx_pwd : String
+	property influx_db : String
+	
+	property _influxDB : JavaInfluxDB
+	
+	
+	function getInfluxDB() : JavaInfluxDB do
+		
+		if (_influxDB == `null`) do
+			
+			// Connect to Influx
+			_influxDB = `InfluxDBFactory.connect(`&influx_url&`, `&influx_usr&`, `&influx_pwd&`)`
+			
+			// Create the database (if it does not exist)
+			`Query query = new Query("CREATE DATABASE \"" + `&influx_db&` + "\"", `&influx_db&`);
+            QueryResult qr =`&_influxDB&`.query(query);
+            if (qr.hasError()) {
+                Logger.getLogger("JavaInfluxClient").log(Level.SEVERE, "Error creating influx db " + qr.getError());`
+                _influxDB = `null`
+                return _influxDB
+            `}`
+            
+            // Set the database
+            ``&_influxDB&`.setDatabase(`&influx_db&`);`
+            
+            // Use the default retention policy
+            ``&_influxDB&`.setRetentionPolicy("autogen");`
+            
+            // Enable sending measurement in batches
+            ``&_influxDB&`.enableBatch(BatchOptions.DEFAULTS.actions(1000).flushDuration(1000));`
+		
+		end
+		
+		return _influxDB
+		
+	end
+	
+	function writePointToInflux(point : JavaInfluxPoint) do
+		getInfluxDB()
+		``&_influxDB&`.write(`&point&`);`
+	end
+		
+}

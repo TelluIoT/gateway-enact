@@ -1,0 +1,14 @@
+[Unit]
+Description=Service Exposing gateway data to Prometheus
+After=networking.service
+
+[Service]
+ExecStart=/home/pi/gateway-p4/@current/Prometheus/Prometheus
+Restart=always
+RestartSec=30
+StandardOutput=syslog
+StandardError=syslog
+
+[Install]
+WantedBy=multi-user.target
+

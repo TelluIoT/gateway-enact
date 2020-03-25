@@ -1,0 +1,4 @@
+allow-hotplug lte0
+iface lte0 inet dhcp
+    pre-up /usr/sbin/chat -v -f /etc/chatscripts/sunrise.SIM7100 >/dev/ttyWWAN02 </dev/ttyWWAN02
+    post-down /usr/sbin/chat -v -f /etc/chatscripts/gsm_off.SIM7100 >/dev/ttyWWAN02 </dev/ttyWWAN02

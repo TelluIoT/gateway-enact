@@ -1,0 +1,35 @@
+- hosts: gateways
+  tasks: 
+    
+    - name: Load Gateway Version
+      include_vars: ../public-files/gateway_version.yaml
+
+
+    - name: Copy realease package from a local copy
+      copy:
+        src: "../releases/{{ gateway_version }}.tar.gz"
+        dest: "/tmp/release-{{ gateway_version }}.tar.gz"
+        force: yes
+
+    - name: Make the releases directory
+      file:
+        path: /home/pi/gateway-p4
+        state: directory
+
+    - name: Uncompress Release
+      unarchive:
+        remote_src: yes
+        src: "/tmp/release-{{ gateway_version }}.tar.gz"
+        dest: /home/pi/gateway-p4/
+        
+    - name: Build ARM binaries for the gateway services
+      make:
+        chdir: "/home/pi/gateway-p4/{{ gateway_version }}/{{ item }}/"
+      with_items:
+        # - CloudAgent
+        - BLEGateway
+        - GPSDClient
+        - SensorBridge
+        - NetworkAgent
+        - Prometheus
+        

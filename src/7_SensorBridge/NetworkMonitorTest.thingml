@@ -1,0 +1,34 @@
+import "NetworkMonitor.thingml" 
+
+thing NetworkMonitorTest includes NetworkMonitorMsgs {
+	
+	required port monitor {
+		sends start_netmonitor, stop_netmonitor
+		receives network_heartbeat, network_connected, network_disconnected
+	}
+	
+	statechart NetworkMonitorTestSC init Test {
+		
+		state Test {
+			
+			on entry monitor!start_netmonitor(1)
+			
+			internal event monitor?network_heartbeat action print "Network heartbeat\n"
+			internal event monitor?network_connected action print "Network connected\n"
+			internal event monitor?network_disconnected action print "Network disconnected\n"
+		}	
+	}
+}
+
+
+configuration NetworkMonitorTest {
+	
+	instance mon : NetworkMonitor
+	instance test: NetworkMonitorTest
+	instance t : TimerPosix
+	
+	connector mon.clock => t.timer
+	connector test.monitor => mon.monitor
+	
+	
+}

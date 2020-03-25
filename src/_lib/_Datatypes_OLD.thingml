@@ -1,0 +1,115 @@
+datatype Byte<1>
+    @type_checker "Integer"
+	@c_type "uint8_t"
+	@java_type "byte"
+	@java_primitive "true";
+
+datatype Boolean<1>
+    @type_checker "Boolean"
+	@c_type "uint8_t"
+	@java_type "boolean"
+	@java_primitive "true";
+
+datatype Integer<2>
+    @type_checker "Integer"
+	@c_type "int"
+	@java_type "int"
+	@java_primitive "true";
+
+datatype UInt8<1>
+    @type_checker "Integer"
+	@c_type "uint8_t"
+	@java_type "int"
+	@java_primitive "true";
+
+datatype Int8<1>
+    @type_checker "Integer"
+	@c_type "int8_t"
+	@java_type "int"
+	@java_primitive "true";
+
+datatype UInt16<2>
+    @type_checker "Integer"
+	@c_type "uint16_t"
+	@java_type "int"
+	@java_primitive "true";
+
+datatype Int16<2>
+    @type_checker "Integer"
+	@c_type "int16_t"
+	@java_type "int"
+	@java_primitive "true";
+
+datatype UInt32<4>
+    @type_checker "Integer"
+	@c_type "uint32_t"
+	@java_type "int"
+	@java_primitive "true";
+
+datatype Int32<4>
+    @type_checker "Integer"
+	@c_type "int32_t"
+	@java_type "int"
+	@java_primitive "true";
+
+datatype UInt64<8>
+    @type_checker "Integer"
+	@c_type "uint64_t"
+	@java_type "long"
+	@java_primitive "true";
+
+datatype Int64<8>
+    @type_checker "Integer"
+	@c_type "int64_t"
+	@java_type "long"
+	@java_primitive "true";
+
+
+datatype Long<4>
+    @type_checker "Integer"
+	@c_type "long"
+	@java_type "int"
+	@java_primitive "true";
+
+datatype ULong<4>
+    @type_checker "Integer"
+	@c_type "unsigned long"
+	@java_type "int"
+	@java_primitive "true";
+
+datatype Double<4>
+    @type_checker "Real"
+	@c_type "double"
+	@java_type "float"
+	@java_primitive "true";
+ 
+datatype Char<1>
+    @type_checker "String"
+	@c_type "char"
+	@java_type "char"
+    @js_type "char"
+	@java_primitive "true";
+
+object String
+    @type_checker "String"
+	@c_type "char *"
+	@c_byte_size "*"
+	@java_type "String" 
+    @js_type "String";
+
+enumeration DigitalState
+    @type_checker "Integer"
+	@java_type "byte"
+	@java_primitive "true"
+    @c_byte_size "1"
+	@c_type "uint8_t"
+{
+	LOW @enum_val "0"
+	HIGH @enum_val "1"
+}
+
+datatype LongLong<8>
+    @type_checker "Integer"
+    @c_type "long long"
+    @java_type "long"
+    @java_primitive "true";

@@ -1,0 +1,99 @@
+import "CompulabMsgs.thingml"
+import "timer.thingml" from stl
+
+
+thing LED includes CompulabMsgs, TimerClientPort 
+@c_header `
+#include <wiringPi.h>
+#include <stdio.h>`
+{
+	
+	readonly property timer_id : UInt8 = 0
+	readonly property LED_ID : UInt8 = 0
+	readonly property LED_PIN : UInt8 = 0
+	
+	provided port ctrl {
+		receives ledOff, ledOn, ledBlink, ledFlash
+	}
+	
+	function initWiringPi() do
+		`
+		if(wiringPiSetup() == -1) { //when initialize wiringPi failed, print message to screen
+                printf("setup wiringPi failed !\n");
+                return -1;
+        }
+        `
+	end
+	
+	function init_gpios() `pinMode(`&LED_PIN&`, OUTPUT);`
+	function ledOn() `digitalWrite(`&LED_PIN&`, HIGH);`
+	function ledOff()`digitalWrite(`&LED_PIN&`, LOW);`
+	
+	
+	statechart init OFF {
+		
+		on entry do
+			initWiringPi()
+			init_gpios()
+		end
+		
+		state OFF {
+			on entry ledOff()
+			transition -> ON event e:ctrl?ledOn guard e.led == LED_ID
+			transition -> BLINK event e:ctrl?ledBlink guard e.led == LED_ID action do blink_t1 = e.t1 blink_t2 = e.t2 end
+			transition -> FLASH event e:ctrl?ledFlash guard e.led == LED_ID action do flash_d = e.duration end
+		}
+		
+		state ON {
+			on entry ledOn()
+			transition -> OFF event e:ctrl?ledOff guard e.led == LED_ID
+			transition -> BLINK event e:ctrl?ledBlink guard e.led == LED_ID action do blink_t1 = e.t1 blink_t2 = e.t2 end
+			transition -> FLASH event e:ctrl?ledFlash guard e.led == LED_ID action do flash_d = e.duration end
+		}
+		
+		property blink_t1 : UInt16 = 1000
+		property blink_t2 : UInt16 = 1000
+		
+		composite state BLINK init BLON {
+			state BLON {
+				on entry do
+					ledOn()
+					timer!timer_start(timer_id, blink_t1)
+				end
+				transition -> BLOFF event e:timer?timer_timeout guard e.id == timer_id
+			}
+			state BLOFF {
+				on entry do
+					ledOff()
+					timer!timer_start(timer_id, blink_t2)
+				end
+				transition -> BLON event e:timer?timer_timeout guard e.id == timer_id
+			}
+			transition -> OFF event e:ctrl?ledOff guard e.led == LED_ID
+			transition -> ON event e:ctrl?ledOn guard e.led == LED_ID
+			transition -> FLASH event e:ctrl?ledFlash guard e.led == LED_ID action do flash_d = e.duration end
+			internal event e:ctrl?ledBlink guard e.led == LED_ID action do blink_t1 = e.t1 blink_t2 = e.t2 end
+			
+			on exit timer!timer_cancel(timer_id)
+		}
+		
+		property flash_d : UInt16 = 100
+		
+		state FLASH {
+			on entry do
+				ledOn()
+				timer!timer_start(timer_id, flash_d)
+			end
+			
+			transition -> OFF event e:timer?timer_timeout guard e.id == timer_id
+			
+			transition -> OFF event e:ctrl?ledOff guard e.led == LED_ID
+			transition -> ON event e:ctrl?ledOn guard e.led == LED_ID
+			transition -> BLINK event e:ctrl?ledBlink guard e.led == LED_ID action do blink_t1 = e.t1 blink_t2 = e.t2 end
+			transition -> FLASH event e:ctrl?ledFlash guard e.led == LED_ID action do flash_d = e.duration end
+			
+			on exit timer!timer_cancel(timer_id)
+		}	
+	}
+}
+

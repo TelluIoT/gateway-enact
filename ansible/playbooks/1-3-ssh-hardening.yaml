@@ -1,0 +1,10 @@
+- hosts: gateways
+  roles:
+    - dev-sec.ssh-hardening
+  vars:
+    ssh_print_motd: true
+    ssh_permit_tunnel: true
+    ssh_allow_tcp_forwarding: true
+    ssh_allow_users: pi
+    ssh_max_auth_retries: 4
+    sftp_enabled: true

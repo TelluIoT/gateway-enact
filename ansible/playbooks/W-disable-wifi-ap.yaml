@@ -1,0 +1,50 @@
+- hosts: gateways
+  tasks:
+
+    - name: Remove IPTable rule when starting lte0
+      lineinfile:
+        path: /etc/network/interfaces.d/lte0
+        state: absent
+        line: '    post-up /sbin/iptables -t nat -A  POSTROUTING -o lte0 -j MASQUERADE'
+
+    - name: Disable IPv4 forwarding
+      sysctl:
+        name: net.ipv4.ip_forward
+        value: 1
+        state: absent
+        reload: true
+
+    - name: Unset DAEMON_CONF in /etc/default/hostapd
+      lineinfile:
+        path: /etc/default/hostapd
+        state: absent
+        line: 'DAEMON_CONF="/etc/hostapd/hostapd.conf"'
+
+    - name: Disable DNSMasq and HostAPD 
+      systemd:
+        name: "{{ item }}"
+        enabled: no
+        state: stopped
+      with_items:
+        - dnsmasq
+        - hostapd
+    
+    - name: Restore original dhcpcd.conf file
+      copy:
+        src: ../public-files/wifi/dhcpcd_disable.conf
+        dest: /etc/dhcpcd.conf
+        force: yes
+        owner: root
+        group: root
+        mode: 0644
+        backup: no
+    
+    - name: Restart dhcpcd service
+      systemd:
+        name: "{{ item }}"
+        state: restarted
+      with_items:
+        - dhcpcd
+    
+- name: Reboot the gateway
+  import_playbook: ./Z-reboot.yaml

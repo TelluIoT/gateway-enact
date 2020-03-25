@@ -1,0 +1,66 @@
+import "datatypes.thingml" from stl 
+
+thing fragment ArduinoFunctions {
+	
+	function ledInit() `pinMode(LED_BUILTIN, OUTPUT);`
+	function ledON() `digitalWrite(LED_BUILTIN, HIGH);`
+	function ledOFF() `digitalWrite(LED_BUILTIN, LOW);`
+	function ledToggle() `digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));`
+	
+	function getSupplyVoltage() : UInt16 do
+		`
+		#define ADMUX_ADCMASK  ((1 << MUX3)|(1 << MUX2)|(1 << MUX1)|(1 << MUX0))
+		#define ADMUX_REFMASK  ((1 << REFS1)|(1 << REFS0))
+		
+		#define ADMUX_REF_AREF ((0 << REFS1)|(0 << REFS0))
+		#define ADMUX_REF_AVCC ((0 << REFS1)|(1 << REFS0))
+		#define ADMUX_REF_RESV ((1 << REFS1)|(0 << REFS0))
+		#define ADMUX_REF_VBG  ((1 << REFS1)|(1 << REFS0))
+		
+		#define ADMUX_ADC_VBG  ((1 << MUX3)|(1 << MUX2)|(1 << MUX1)|(0 << MUX0))
+		
+		
+		  ADMUX &= ~(ADMUX_REFMASK | ADMUX_ADCMASK);
+		  ADMUX |= ADMUX_REF_AVCC;      // select AVCC as reference
+		  ADMUX |= ADMUX_ADC_VBG;       // measure bandgap reference voltage
+		  
+		  _delay_us(500);               // a delay rather than a dummy measurement is needed to give a stable reading!
+		  ADCSRA |= (1 << ADSC);        // start conversion
+		  while (ADCSRA & (1 << ADSC)); // wait to finish
+		  `
+		  return `(1100UL*1023/ADC)`  as  UInt16  // AVcc = Vbg/ADC*1023 = 1.1V*1023/ADC 
+		
+	end
+	
+	function getTemperature() : Int8 do
+		`
+		  unsigned int wADC;
+		  double t;
+		
+		  // The internal temperature has to be used
+		  // with the internal reference of 1.1V.
+		  // Channel 8 can not be selected with
+		  // the analogRead function yet.
+		
+		  // Set the internal reference and mux.
+		  ADMUX = (_BV(REFS1) | _BV(REFS0) | _BV(MUX3));
+		  ADCSRA |= _BV(ADEN);  // enable the ADC
+		
+		  delay(20);            // wait for voltages to become stable.
+		
+		  ADCSRA |= _BV(ADSC);  // Start the ADC
+		
+		  // Detect end-of-conversion
+		  while (bit_is_set(ADCSRA,ADSC));
+		
+		  // Reading register "ADCW" takes care of how to read ADCL and ADCH.
+		  wADC = ADCW;
+		
+		  // The offset of 324.31 could be wrong. It is just an indication.
+		  t = (wADC - 324.31 ) / 1.22;
+		`
+		return `t` as Int8
+		
+	end
+	
+}

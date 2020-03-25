@@ -1,0 +1,56 @@
+import "mqtt/posix/PosixMQTTAdapter.thingml" from stl
+import "timer.thingml" from stl 
+
+import "../4_BLEGateway/BLEGatewayMsgs.thingml"
+import "../5_GPS/GPSMsgs.thingml"
+import "../6_Sensor/SensorMsgs.thingml"
+
+thing fragment CloudAgentMsgs {
+	
+	message gateway_heartbeat(timestamp : Long, seq : UInt16)
+	message gateway_heartbeat_ack(timestamp : Long, incseq : UInt16)
+	
+	message gateway_button(timestamp : Long, button_id: UInt8, event_type: UInt16)
+	
+	message gateway_psu(voltage : UInt16)
+	
+}
+
+thing fragment CloudPort includes CloudAgentMsgs, BLEGatewayMsgs, GPSMsgs, SensorMsgs {
+	
+	required port cloud 		
+	{
+		sends gateway_heartbeat, gateway_button, ruuvi_measurement, gps_status, gps_position, gps_altitude, gateway_psu, adc_values, front_panel_hwmonitor
+		receives gateway_heartbeat_ack
+	}
+	
+}
+
+thing fragment CloudPortExt includes CloudAgentMsgs, BLEGatewayMsgs, GPSMsgs, SensorMsgs {
+	
+	provided port cloudext 
+	@external "posixmqttjson"					
+	{
+		receives gateway_heartbeat, gateway_button, ruuvi_measurement, gps_status, gps_position, gps_altitude, gateway_psu, adc_values, front_panel_hwmonitor
+		sends gateway_heartbeat_ack
+	}
+	
+}
+
+thing fragment LocalPort includes CloudAgentMsgs, BLEGatewayMsgs, GPSMsgs, SensorMsgs {
+	
+	required port local {
+		receives ruuvi_measurement, gps_status, gps_position, gps_altitude, adc_values, front_panel_hwmonitor
+	} 
+	
+}
+
+thing fragment LocalPortExt includes CloudAgentMsgs, BLEGatewayMsgs, GPSMsgs, SensorMsgs {
+	
+	provided port localext 
+	@external "posixmqttjson"	
+	{
+		sends ruuvi_measurement, gps_status, gps_position, gps_altitude, adc_values, front_panel_hwmonitor
+	} 
+	
+}

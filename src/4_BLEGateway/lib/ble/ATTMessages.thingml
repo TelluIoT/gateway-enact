@@ -1,0 +1,37 @@
+import "../Datatypes.thingml"
+import "HCIDatatypes.thingml"
+import "ATTDatatypes.thingml"
+
+thing fragment ATTMsgs
+{
+  /* Find Information */
+  message ATTFindInformationRequest(ConnectionHandle : UInt16, StartingHandle : UInt16, EndingHandle : UInt16);
+  message ATTFindInformationResponse(ConnectionHandle : UInt16, Format : Byte, InformationData : GATTData);
+  message ATTFindInformationError(ConnectionHandle : UInt16, AttributeHandle : UInt16, Error : ATTErrorCode);
+
+  /* Reading Attributes */
+  message ATTReadByTypeRequest(ConnectionHandle : UInt16, StartingHandle : UInt16, EndingHandle : UInt16, AttributeType : UUID);
+  message ATTReadByTypeResponse(ConnectionHandle : UInt16, Length : Byte, AttributeDataList : GATTData);
+  message ATTReadByTypeError(ConnectionHandle : UInt16, AttributeHandle : UInt16, Error : ATTErrorCode);
+
+  message ATTReadRequest(ConnectionHandle : UInt16, AttributeHandle : UInt16);
+  message ATTReadResponse(ConnectionHandle : UInt16, AttributeValue : GATTData);
+  message ATTReadError(ConnectionHandle : UInt16, AttributeHandle : UInt16, Error : ATTErrorCode);
+
+  message ATTReadByGroupTypeRequest(ConnectionHandle : UInt16, StartingHandle : UInt16, EndingHandle : UInt16, AttributeGroupType : UUID);
+  message ATTReadByGroupTypeResponse(ConnectionHandle : UInt16, Length : Byte, AttributeDataList : GATTData);
+  message ATTReadByGroupTypeError(ConnectionHandle : UInt16, AttributeHandle : UInt16, Error : ATTErrorCode);
+
+  /* Writing Attributes */
+  message ATTWriteRequest(ConnectionHandle : UInt16, AttributeHandle : UInt16, AttributeValue : GATTData);
+  message ATTWriteResponse(ConnectionHandle : UInt16);
+  message ATTWriteError(ConnectionHandle : UInt16, AttributeHandle : UInt16, Error : ATTErrorCode);
+
+  message ATTWriteCommand(ConnectionHandle : UInt16, AttributeHandle : UInt16, AttributeValue : GATTData);
+
+  /* Server Initiated */
+  message ATTHandleValueNotification(ConnectionHandle : UInt16, AttributeHandle : UInt16, AttributeValue : GATTData);
+
+  message ATTHandleValueIndication(ConnectionHandle : UInt16, AttributeHandle : UInt16, AttributeValue : GATTData);
+  message ATTHandleValueConfirmation(ConnectionHandle : UInt16);
+}

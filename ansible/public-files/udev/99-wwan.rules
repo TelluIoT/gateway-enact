@@ -1,0 +1,3 @@
+# SIMCom SIM7100
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1e0e", ATTRS{idProduct}=="9001", SYMLINK+="ttyWWAN%E{ID_USB_INTERFACE_NUM}"
+SUBSYSTEM=="net", ATTRS{idVendor}=="1e0e", ATTRS{idProduct}=="9001", NAME="lte0"

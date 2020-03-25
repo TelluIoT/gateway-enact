@@ -1,0 +1,7 @@
+- hosts: gateways
+  tasks:
+    - name: Upload public authorized key
+      authorized_key:
+        user: pi
+        state: present
+        key: "{{ lookup('file', '../private-files/ssh-key-gateway-enact.pub') }}"

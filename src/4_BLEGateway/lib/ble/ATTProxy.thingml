@@ -1,0 +1,57 @@
+import "../Datatypes.thingml"
+import "ATTMessages.thingml"
+import "UUID.thingml"
+
+
+thing fragment ATT includes ATTMsgs, UUIDFunctions
+{
+  required port ATT
+  {
+    receives ATTFindInformationRequest, ATTFindInformationResponse, ATTFindInformationError
+    receives ATTReadByTypeRequest, ATTReadByTypeResponse, ATTReadByTypeError
+    receives ATTReadRequest, ATTReadResponse, ATTReadError
+    receives ATTReadByGroupTypeRequest, ATTReadByGroupTypeResponse, ATTReadByGroupTypeError
+    receives ATTWriteRequest, ATTWriteResponse, ATTWriteError
+    receives ATTWriteCommand
+    receives ATTHandleValueNotification
+    receives ATTHandleValueIndication, ATTHandleValueConfirmation
+
+    sends ATTFindInformationRequest, ATTFindInformationResponse, ATTFindInformationError
+    sends ATTReadByTypeRequest, ATTReadByTypeResponse, ATTReadByTypeError
+    sends ATTReadRequest, ATTReadResponse, ATTReadError
+    sends ATTReadByGroupTypeRequest, ATTReadByGroupTypeResponse, ATTReadByGroupTypeError
+    sends ATTWriteRequest, ATTWriteResponse, ATTWriteError
+    sends ATTWriteCommand
+    sends ATTHandleValueNotification
+    sends ATTHandleValueIndication, ATTHandleValueConfirmation
+  }    
+}
+
+
+
+thing fragment ATTProxy includes ATTMsgs, UUIDFunctions
+{
+  provided port ATT
+  {
+    receives ATTFindInformationRequest, ATTFindInformationResponse, ATTFindInformationError
+    receives ATTReadByTypeRequest, ATTReadByTypeResponse, ATTReadByTypeError
+    receives ATTReadRequest, ATTReadResponse, ATTReadError
+    receives ATTReadByGroupTypeRequest, ATTReadByGroupTypeResponse, ATTReadByGroupTypeError
+    receives ATTWriteRequest, ATTWriteResponse, ATTWriteError
+    receives ATTWriteCommand
+    receives ATTHandleValueNotification
+    receives ATTHandleValueIndication, ATTHandleValueConfirmation
+
+    sends ATTFindInformationRequest, ATTFindInformationResponse, ATTFindInformationError
+    sends ATTReadByTypeRequest, ATTReadByTypeResponse, ATTReadByTypeError
+    sends ATTReadRequest, ATTReadResponse, ATTReadError
+    sends ATTReadByGroupTypeRequest, ATTReadByGroupTypeResponse, ATTReadByGroupTypeError
+    sends ATTWriteRequest, ATTWriteResponse, ATTWriteError
+    sends ATTWriteCommand
+    sends ATTHandleValueNotification
+    sends ATTHandleValueIndication, ATTHandleValueConfirmation
+  }
+
+  
+}
+ 

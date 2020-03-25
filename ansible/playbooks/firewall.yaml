@@ -1,0 +1,7 @@
+- hosts: gateways
+  roles:
+    - geerlingguy.firewall
+  vars:
+    firewall_allowed_tcp_ports:
+      - "22"
+    firewall_log_dropped_packets: false

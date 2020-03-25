@@ -1,0 +1,117 @@
+- hosts: gateways
+  tasks:
+    - name: Install DNSMasq and HostAPD
+      apt:
+        name:
+          - dnsmasq
+          - hostapd
+        state: latest
+        update_cache: yes
+
+    - name: Stop DNSMasq and HostAPD so that they can be configured
+      systemd:
+        name: "{{ item }}"
+        state: stopped
+      with_items:
+        - dnsmasq
+        - hostapd
+    
+    - name: Update dhcpcd.conf file
+      copy:
+        src: ../public-files/wifi/dhcpcd.conf
+        dest: /etc/dhcpcd.conf
+        force: yes
+        owner: root
+        group: root
+        mode: 0644
+        backup: yes
+    
+    - name: Restart dhcpcd service
+      systemd:
+        name: "{{ item }}"
+        state: restarted
+      with_items:
+        - dhcpcd
+    
+    - name: Setup dnsmasq.conf file
+      copy:
+        src: ../public-files/wifi/dnsmasq.conf
+        dest: /etc/dnsmasq.conf
+        force: yes
+        owner: root
+        group: root
+        mode: 0644
+        backup: yes
+
+    - name: Reload dnsmasq service
+      systemd:
+        name: "{{ item }}"
+        enabled: yes
+        state: reloaded
+      with_items:
+        - dnsmasq
+    
+    - name: Setup hostapd.conf file
+      copy:
+        src: ../public-files/wifi/hostapd.conf
+        dest: /etc/hostapd/hostapd.conf
+        force: yes
+        owner: root
+        group: root
+        mode: 0644
+        backup: yes
+    
+    - name: Set the WIFI SSID to the gateway hostname
+      replace:
+        path: /etc/hostapd/hostapd.conf
+        regexp: 'GATEWAYID'
+        replace: "{{ inventory_hostname }}"
+        backup: no
+
+    - name: Set the WIFI SSID to the gateway hostname
+      replace:
+        path: /etc/hostapd/hostapd.conf
+        regexp: 'WIFIPASSPHRASE'
+        replace: "{{ lookup('password', '../private-files/wifi-passphrases/{{ inventory_hostname }} chars=ascii_letters,digits length=16') }}"
+        backup: no
+
+    - name: Set DAEMON_CONF in /etc/default/hostapd
+      lineinfile:
+        path: /etc/default/hostapd
+        regexp: '^DAEMON_OPTS='
+        insertafter: '^#DAEMON_OPTS='
+        line: 'DAEMON_CONF="/etc/hostapd/hostapd.conf"'
+    
+    - name: Unmask and unable hostapd
+      systemd:
+        name: "{{ item }}"
+        masked: no
+        enabled: yes
+        state: restarted
+      with_items:
+        - hostapd    
+        
+    - name: Enable IPv4 forwarding
+      sysctl:
+        name: net.ipv4.ip_forward
+        value: 1
+        state: present
+        reload: true
+
+    # - name: Create Iptables NAT chain (this works but does not persist)
+    #   iptables:
+    #     table: nat
+    #     chain: POSTROUTING
+    #     out_interface: 'lte0'
+    #     # source: '{{ masquerade_source }}'
+    #     # destination: '{{ masquerade_destination }}'
+    #     jump: MASQUERADE
+
+    - name: Create Iptables NAT chain whenever the LTE connection comes up
+      lineinfile:
+        path: /etc/network/interfaces.d/lte0
+        state: present
+        line: '    post-up /sbin/iptables -t nat -A  POSTROUTING -o lte0 -j MASQUERADE'
+
+- name: Reboot the gateway
+  import_playbook: ./Z-reboot.yaml

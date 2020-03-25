@@ -1,0 +1,51 @@
+import "timer.thingml" from stl 
+
+thing fragment SensorMsgs {
+	
+	// The front panels regularly send pings to the gateway to check the serial communication
+	// with the front panel management process on the gateway
+	message ping_serial(seq : UInt16)														@code "80"
+	message pong_serial(seq : UInt16)														@code "81"
+	
+	// Indicates that all vital components of the gateway are running
+	// e.g. Local MQTT broker which is used between the components, gateway agent, etc
+	// The next heartbeat is expected in "interval" seconds
+	message heartbeat_gateway(interval : UInt8)												@code "86"
+	
+	// Indicates that the gateway has a working network connection
+	// stable is false if the latency or packet loss is high
+	// The next heartbeat is expected in "interval" seconds
+	message heartbeat_network(stable : Boolean, interval : UInt8)							@code "87"
+
+	// Voltage and temperature from the atmega mcu
+	message front_panel_hwmonitor(temp : Int8, voltage : UInt16)							@code "85"
+	
+	// Sensor specific messages
+	message adc_values(a0 : UInt16, a1 : UInt16, a2 : UInt16, a3 : UInt16)					@code "94"
+	message set_sensor_rate(ms : UInt16)													@code "96"
+	
+	// Indicates that the ble gateway is running and will accept device connections
+	// The next heartbeat is expected in "interval" seconds
+	message heartbeat_ble(interval : UInt8)													@code "89"
+	
+	message ble_error(device : UInt8)														@code "92"
+	message ble_activity(device : UInt8)													@code "90"
+
+}
+
+thing fragment SensorPort includes SensorMsgs {
+	
+	required port gwserial {
+		sends ping_serial, front_panel_hwmonitor, adc_values
+		receives pong_serial, heartbeat_gateway, heartbeat_network, set_sensor_rate
+	}
+}
+
+thing fragment SensorClientPort includes SensorMsgs {
+	
+	provided port fpserial {
+		receives ping_serial, front_panel_hwmonitor, adc_values
+		sends pong_serial, heartbeat_gateway, heartbeat_network, set_sensor_rate
+	}
+}
+

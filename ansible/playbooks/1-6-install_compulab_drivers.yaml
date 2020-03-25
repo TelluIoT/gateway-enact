@@ -1,0 +1,21 @@
+- hosts: gateways
+  tasks:
+    - name: Make driver directory
+      file:
+       path: /home/pi/drivers
+       state: directory
+
+    - name: Uncompress iot-gate-rpi Drivers (from Compulab)
+      unarchive:
+        src: "../public-files/iot-gate-rpi_raspbian_2018-05-13.zip"
+        dest: /home/pi/drivers/
+
+    - name: Install my_package iot-gate-rpi Drivers (from Compulab)
+      apt: deb="/home/pi/drivers/iot-gate-rpi-raspbian/{{ item }}.deb"
+      sudo: true
+      with_items:
+        - iot-gate-dt
+        - iot-gate-eth
+        - rpi3-rtc
+        - iot-gate-serial
+        - rpi3-modem

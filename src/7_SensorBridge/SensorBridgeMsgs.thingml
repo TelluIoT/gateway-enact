@@ -1,0 +1,27 @@
+import "mqtt/posix/PosixMQTTAdapter.thingml" from stl
+import "../6_Sensor/SensorMsgs.thingml"
+
+
+
+thing fragment SensorBridgeMsgs {
+	/* Add here any bridge specific message */
+}
+
+thing fragment SensorBridgePort includes SensorBridgeMsgs, SensorMsgs {
+	
+	required port fpmqtt 
+	{
+		sends front_panel_hwmonitor, heartbeat_network, adc_values
+		receives set_sensor_rate
+	}
+}
+
+thing fragment SensorBridgeAdapterPort includes SensorBridgeMsgs, SensorMsgs {
+	
+	provided port fpmqtt 
+	@external "posixmqttjson" // Annotation telling the code generator to make an MQTT adapter for this port.
+	{
+		receives front_panel_hwmonitor, heartbeat_network, adc_values
+		sends set_sensor_rate
+	}
+} 

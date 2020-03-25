@@ -1,0 +1,21 @@
+- hosts: gateways
+  tasks:
+    - name: Install dependencies
+      apt:
+        name:
+          - libmosquitto-dev
+          - libbluetooth-dev
+          - libconfuse-dev
+          - libffi-dev
+          - libssl-dev
+          - build-essential
+          - avrdude
+          - python-pip
+          - python-setuptools
+          - libgps-dev
+          - gpsd
+          - gpsd-clients
+          - wiringpi
+          - libmicrohttpd-dev
+        state: latest
+        update_cache: yes

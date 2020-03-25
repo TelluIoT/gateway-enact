@@ -1,0 +1,74 @@
+- hosts: gateways
+  tasks:
+  
+  # A network shared by the different containers
+  - name: Create the gateway network
+    docker_network:
+      name: gatewaynet
+      driver: bridge
+      ipam_options:
+        subnet: "192.168.100.0/24"
+        gateway: "192.168.100.1"
+        iprange: "192.168.100.1/24"
+
+  # The local MQTT broker
+  - name: Install Mosquitto inside Docker
+    docker_container:
+      name: mqtt-message-broker
+      image: tellu/rsd-mqtt-broker:latest
+      networks:
+      - name: gatewaynet
+      restart_policy: unless-stopped
+      ports:
+        - "1883:1883" # MQTT
+        - "9001:9001" # MQTT over websocket
+      log_driver: "json-file"
+      log_options:
+        max-size: 10m # Limit log size
+
+  - name: Install prometeus configuration file
+    copy:
+      src: ../public-files/prometheus.yml
+      dest: /etc/tellugw/prometheus.yml
+      force: yes
+      owner: root
+      group: root
+      mode: 0666
+  
+  - name: Edit configuration file (setup the right gateway_id)
+    replace:
+      path: /etc/tellugw/prometheus.yml
+      regexp: 'GATEWAYID'
+      replace: "{{ inventory_hostname }}"
+      backup: yes
+
+  - name: Creates prometeus persistent data directory (/var/prometheus)
+    file:
+      path: /var/prometheus
+      state: directory
+      owner: root
+      group: root
+      mode: 0777
+
+  # The local Prometeus 
+  - name: Install Prometeus inside Docker
+    docker_container:
+      name: prometeus
+      image: prom/prometheus
+      command:
+        - "--storage.tsdb.retention.time=6w"
+        - "--config.file=/etc/prometheus/prometheus.yml"
+        - "--storage.tsdb.path=/prometheus"
+        - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+        - "--web.console.templates=/usr/share/prometheus/consoles"
+      networks:
+      - name: gatewaynet
+      restart_policy: unless-stopped
+      ports:
+        - "9090:9090" # Prometeus
+      log_driver: "json-file"
+      log_options:
+        max-size: 10m # Limit log size
+      volumes:
+        - /etc/tellugw/prometheus.yml:/etc/prometheus/prometheus.yml
+        - /var/prometheus:/prometheus

@@ -1,0 +1,12 @@
+import "mqtt/posix/PosixMQTTAdapter.thingml" from stl
+
+
+thing BLEGatewayMsgs {
+	
+	message ruuvi_measurement(timestamp : Long, blemac: String, deviceID : UInt32, humidity : UInt8, temperature : Int32, pressure : Int32, ax : Int16, ay : Int16, az : Int16, battery : UInt16, rssi : Int8)
+	message heartbeat_ble(interval : UInt8)
+	message ble_error(device : UInt8)
+	message ble_activity(device : UInt8)
+
+}
+ 

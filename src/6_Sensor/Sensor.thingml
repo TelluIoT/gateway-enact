@@ -1,0 +1,127 @@
+import "SensorMsgs.thingml"
+import "ArduinoFunctions.thingml"
+ 
+thing DummySensor includes SensorPort, ArduinoFunctions, TimerMsgs {
+	 
+	readonly property pwr_timer_id 		: UInt8 = 1
+	readonly property gw_timer_id 		: UInt8 = 2
+	readonly property net_timer_id 		: UInt8 = 3
+	readonly property cloud_timer_id 	: UInt8 = 4
+	
+	readonly property sensor_timer_id 	: UInt8 = 5
+	property sensor_interval			: UInt16 = 10000
+	
+	
+	required port clock 
+	@sync_send "true"
+	{
+		receives timer_timeout
+		sends timer_start, timer_cancel
+	}
+	
+	statechart DummySensorSC init GWDisconnected {
+		
+		on entry do
+			ledInit()
+			clock!timer_start(sensor_timer_id, sensor_interval)
+		end
+		
+		// Dummy sensor using analog pin A0 to A3
+		internal event e : clock?timer_timeout guard e.id == sensor_timer_id action do
+			gwserial!adc_values(`analogRead(A0)`, `analogRead(A1)`, `analogRead(A2)`, `analogRead(A3)`)
+			clock!timer_start(sensor_timer_id, sensor_interval)
+		end
+		
+		internal event e : gwserial?set_sensor_rate action do 
+			clock!timer_cancel(sensor_timer_id)
+			sensor_interval = e.ms
+			if (sensor_interval < 50)  sensor_interval = 50 // Put a limit somewhere, this is not designed for high rates.
+			clock!timer_start(sensor_timer_id, sensor_interval)
+		end
+		
+		state GWDisconnected {
+			
+			on entry do
+				ledToggle()
+				gwserial!ping_serial(13)
+				clock!timer_start(pwr_timer_id, 250)
+			end
+			
+			transition -> GWConnected event e: gwserial?pong_serial action do clock!timer_cancel(pwr_timer_id) end
+			transition -> GWDisconnected event e : clock?timer_timeout guard e.id == pwr_timer_id
+		}
+		
+		
+		composite state GWConnected init SerialPing {
+			
+			/* PING the gateway on the serial link every 500ms */
+			
+			property serial_seq : UInt16 = 0
+			
+			state SerialPing {
+				on entry do
+				    serial_seq = serial_seq + 1
+					gwserial!ping_serial(serial_seq)
+					if ((serial_seq % 10) == 0) gwserial!front_panel_hwmonitor(getTemperature(), getSupplyVoltage())
+					clock!timer_start(pwr_timer_id, 250)
+				end
+				
+				transition -> Idle event e: gwserial?pong_serial guard e.seq == (serial_seq + 1) action clock!timer_cancel(pwr_timer_id)
+			}
+			
+			state Idle {
+				on entry clock!timer_start(pwr_timer_id, 500)
+				transition -> SerialPing event e : clock?timer_timeout guard e.id == pwr_timer_id
+			}
+			
+			transition -> GWDisconnected event e : clock?timer_timeout guard e.id == pwr_timer_id
+			
+			
+			region GatewayHeartbeat init WaitingForGWHeartbeat {
+				
+				state WaitingForGWHeartbeat {
+					
+					on entry ledOFF() 
+					
+					transition -> GWOK event e : gwserial?heartbeat_gateway action clock!timer_start(gw_timer_id, e.interval*1000)
+				}	
+				
+				state GWOK {
+					on entry ledON()
+					
+					internal event e : gwserial?heartbeat_gateway action do
+						clock!timer_cancel(gw_timer_id)
+						clock!timer_start(gw_timer_id, e.interval*1000)
+					end
+					
+					transition -> WaitingForGWHeartbeat event  e : clock?timer_timeout guard e.id == gw_timer_id
+				}
+			}
+
+		}
+	}
+}
+
+
+protocol Serial 
+	@serial_baudrate "57600"
+	@serializer "Binary"
+	@reverse_endianness "true" // Reverse the endianness for messages sent on the serial line.
+;
+
+configuration DummySensor {
+
+	instance s : DummySensor
+		set s.pwr_timer_id = 1
+		set s.gw_timer_id = 2
+		set s.net_timer_id = 3
+		set s.cloud_timer_id = 4
+	
+	connector s.gwserial over Serial
+	
+	instance t : TimerArduino
+	
+	connector s.clock => t.timer
+}
+
+

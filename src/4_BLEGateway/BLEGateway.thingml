@@ -1,0 +1,347 @@
+//import "lib/Datatypes.thingml"
+
+import "datatypes.thingml" from stl
+import "timer.thingml" from stl
+ 
+import "lib/ExitHandler.thingml"
+import "lib/ble/HCISocketImpl.thingml"
+import "lib/ble/BLE_initialiser.thingml"
+import "lib/ble/BLE_scanner.thingml"
+import "lib/ble/BLE_connecter.thingml"
+import "BLEGatewayPortExtPosixMqttJson.thingml" 
+
+
+thing Main includes ExitHandlerMsgs, BLEGatewayPort, MQTTAdapterCtrlPort, TimerMsgs, HCISocket, ATT, SMP
+{
+  required port Signals
+  @sync_send "true"
+  {
+    receives Interrupt
+    sends Quit
+  }
+ 
+  required port clock {
+	receives timer_timeout
+	sends timer_start, timer_cancel
+  }
+	
+  readonly property client_id : String = "BLEGateway"
+  property broker_host : String = "localhost"
+  property broker_port : UInt16 = 1883
+  
+  readonly property timer_id : UInt8 = 1
+  
+  
+  property DeviceAddress : BTAddress
+  
+  function printBuffer(Data : DataPointer, Length : UInt16) do
+  	`int i = 0;
+  	for (i=0; i<`&Length&`;i++) {
+  		printf("%02x", `&Data&`[i]);
+  		if (i<`&Length - 1&`) printf(" ");
+  	}`
+  end
+  
+	function getEpochTimeStamp() : UInt64 do
+		 // Read the UTC time
+	     `time_t utc = time(NULL);`
+	     return `utc` as UInt64
+	end
+  	
+  function printBTAddr(addr : BTAddress) do
+  	 `char address[18];
+      bzero(address, 18);
+      ba2str(&`&addr&`, address);
+      printf("%s", address);`
+  end
+  
+  function BTAddrToUInt32(addr : BTAddress) : UInt32 do
+  	 `
+  	 uint32_t result = 0;
+  	 uint32_t tmp = 0;
+  	 for (int i=0; i<3; i++) {
+  	 	tmp = `&addr&`.b[i];
+  	 	//printf("addr[%d]:%d\n", i, tmp);
+  	 	tmp = tmp << i*8;
+  	 	result += tmp;
+  	 }
+  	 `
+  	 return `result`
+  end
+  
+  
+  readonly property wd_timer_id : UInt8 = 2
+  
+  function resetWatchdog() do
+  	clock!timer_cancel(wd_timer_id)
+  	clock!timer_start(wd_timer_id, 60000)
+  end
+  
+  function exitProgram() do
+    Socket!Close()
+    Signals!Quit(0)
+    `exit(1);`
+  end
+  
+  
+  statechart States init ConnectToMQTT
+  {
+  	
+  	internal event e : clock?timer_timeout guard e.id == wd_timer_id action do
+  		print "[INFO]: Watchdog timeout. Exiting\n"
+  		exitProgram()
+	end
+  	
+  	state ConnectToMQTT {
+  		
+  		on entry do
+  			println "Connecting to the local MQTT Broker."
+	  		mqtt!mqtt_connect(client_id, broker_host, broker_port, false)
+	  		resetWatchdog()
+	  	end
+  		
+  		internal event mqtt?mqtt_disconnected action do
+  			println "Ignoring disconnect event while we are connecting."
+  			resetWatchdog()
+  		end
+  		
+  		transition -> Initialise event mqtt?mqtt_connected action do
+  			println "MQTT Broker connected."
+  			resetWatchdog()
+  		end
+  	}
+  	
+  	
+    // Initialise HCI socket and BLE controller
+    composite state Initialise init OpenSocket
+    {
+    	
+    	state OpenSocket {
+    		on entry do 
+    			print "[BLEGateway] Opening Bluetooth Socket...\n"
+    			Socket!Open()
+    		end
+    		
+    		transition -> ResetAdapter event e:Socket?Opened action do
+        		DeviceAddress = e.Address
+        		print "[BLEGateway] Bluetooth SocketOpened ADDR: " printBTAddr(DeviceAddress) print "\n"
+      		end
+    	}
+    	
+    	state ResetAdapter {
+    		on entry do
+    			print "[BLEGateway] Initialize Bluetooth Adapter (Reset)\n"
+    			HCICommands!Reset()
+    		end
+    		
+    		internal event e:HCIEvents?ResetCompleted guard (e.Status == 0) action do
+    			clock!timer_start(timer_id, 250)
+    			print "Reset Completed. Waiting 1/4 sec...\n"
+    		end
+    		
+    		transition -> SetEventMask event e : clock?timer_timeout guard e.id == timer_id 
+    	}
+    	
+    	
+    	state SetEventMask {
+    		on entry do
+    			print "[BLEGateway] Configure Adapter (SetEventMask)\n"
+    			`set_event_mask_cp filter;
+    			filter.mask[7] = 0x3D;
+    			filter.mask[6] = 0xBF;
+    			filter.mask[5] = 0xF8;
+    			filter.mask[4] = 0x07;
+    			filter.mask[3] = 0xFF;
+    			filter.mask[2] = 0xFB;
+    			filter.mask[1] = 0xFF;
+    			filter.mask[0] = 0xFF;`
+    			HCICommands!SetEventMask(`filter`) 
+    		end
+    		
+    		transition -> SetLEEventMask event e:HCIEvents?SetEventMaskCompleted guard (e.Status == 0)
+    	}
+    	
+    	state SetLEEventMask {
+    		on entry do
+    			print "[BLEGateway] Configure Adapter (SetLEEventMask)\n"
+    			`set_event_mask_cp filter;
+    			filter.mask[7] = 0x00;
+    			filter.mask[6] = 0x00;
+    			filter.mask[5] = 0x00;
+    			filter.mask[4] = 0x00;
+    			filter.mask[3] = 0x00;
+    			filter.mask[2] = 0x00;
+    			filter.mask[1] = 0x00;
+    			filter.mask[0] = 0x1F;`
+    			HCICommands!SetLEEventMask(`filter`)
+    		end
+    		
+    		transition -> Scan event e:HCIEvents?SetLEEventMaskCompleted guard (e.Status == 0)
+    	}
+    	
+    	state Scan {
+    		on entry do
+    			print "[BLEGateway]: Setting scan parameters...\n"
+		        var Type : BLEScanType = BLEScanType:PASSIVE
+		        var Interval : Int16 = `0x0010`
+		        var Window : Int16 = `0x0010`
+		        var OwnAddressType : BLEAddressType = BLEAddressType:PUBLIC 
+		        var FilterPolicy : BLEScanFilterPolicy = BLEScanFilterPolicy:ALL
+		        HCICommands!SetLEScanParameters(Type, Interval, Window, OwnAddressType, FilterPolicy)
+    		end
+    		
+    		internal event e:HCIEvents?SetLEScanParametersCompleted guard (e.Status == 0) action do 
+    			print "[BLEGateway]: Start scanning...\n"
+    			 HCICommands!SetLEScanEnable(`0x01`, `0x00`)
+    		end
+		      
+    	}
+    	
+    	transition -> Ready event e:HCIEvents?SetLEScanEnableCompleted guard (e.Status == 0) action println "   -> Ready event e:HCIEvents?SetLEScanEnableCompleted"
+    	
+    	// Halt on errors
+	    transition -> Failed event e:HCIEvents?SetLEScanParametersCompleted guard (e.Status > 0) action print "[BLEGateway]: ERROR SetLEScanParametersCompleted Status > 0\n"
+	    transition -> Failed event e:HCIEvents?SetLEScanEnableCompleted guard (e.Status > 0) action print "[BLEGateway]: ERROR SetLEScanEnableCompleted Status > 0\n"
+	    transition -> Failed event e:HCIEvents?ResetCompleted guard (e.Status > 0) action print "[BLEGateway]: ERROR ResetCompleted Status > 0\n"
+	    transition -> Failed event e:HCIEvents?SetLEEventMaskCompleted guard (e.Status > 0) action print "[BLEGateway]: ERROR SetLEEventMaskCompleted Status > 0\n"
+	    transition -> Failed event e:HCIEvents?SetEventMaskCompleted guard (e.Status > 0) action print "[BLEGateway]: ERROR SetEventMaskCompleted Status > 0\n"
+		transition -> Failed event Socket?Closed action print "[BLEGateway]: ERROR HCI Socket Closed \n"
+	    transition -> Quit event Signals?Interrupt
+	    
+	    transition -> Failed event mqtt?mqtt_disconnected action println "Exiting because of an MQTT Disconnect event."
+    }
+    
+    state Ready 
+    {
+      
+    	on entry do
+          clock!timer_start(timer_id, 5000)
+        end
+        
+        internal event e : clock?timer_timeout guard e.id == timer_id action do
+        	clock!timer_start(timer_id, 5000)
+        	local!heartbeat_ble(6)
+        end
+        
+		internal event e:HCIEvents?LEAdvertisementReport action do
+      	
+      		resetWatchdog()
+      	
+      		// Quick and dirty parse for ruuvi sensor (see documentation here https://github.com/ruuvi/ruuvi-sensor-protocols)
+      		if (e.Length >= 21) do`
+      			uint8_t * payload = (uint8_t*)&`&e.Data&`;
+	      		if (payload[3] == 0x11 && payload[4] == 0xFF && payload[5] == 0x99 && payload[6] == 0x04) {	// This should be a RUUVi Data Format 3 Protocol
+	      			uint8_t * packet = payload + 7; // packet contains 14 bytes
+	      			uint8_t humidity = packet[1] / 2;
+	      			
+	      			int8_t t_signed = packet[2] & 0x7F;
+	      			int32_t temperature = t_signed * 100  + packet[3];
+	      			if (packet[2] & 0x80) temperature = -temperature;
+	      			int32_t pressure = 50000 + (packet[4]<<8)  + packet[5];
+	      			int16_t acc_x = packet[6] << 8 | packet[7];
+	      			int16_t acc_y = packet[8] << 8 | packet[9];
+	      			int16_t acc_z = packet[10] << 8 | packet[11];
+	      			uint16_t battery = packet[12] << 8 | packet[13];`
+	      			
+	      			//print "LEAdvertisementReport " printBTAddr(e.Address) print " -> " printBuffer(`(uint8_t*)&`&e.Data&``, e.Length) print " (" print e.Length print ")\n"
+	      			
+	      		    // printBTAddr(e.Address)
+	      			// `printf(" (%d)-> H:%d %, T:%d C (x100), P:%d Pa, AX:%d, AY:%d, AZ:%d, Batt:%d mv RSSI=%d dB\n",`&BTAddrToUInt32(e.Address)&` , humidity, temperature, pressure, acc_x, acc_y, acc_z, battery, `&e.RSSI&`);`
+	      			
+	      			`char address[18];
+      				 bzero(address, 18);
+      				 ba2str(&`&e.Address&`, address);`
+	      			
+	      			local!ruuvi_measurement( getEpochTimeStamp(), `address` as String, BTAddrToUInt32(e.Address), `humidity` as UInt8, `temperature` as Int32, `pressure` as Int32, `acc_x` as UInt16, `acc_y` as UInt16, `acc_z` as UInt16, `battery` as UInt16, e.RSSI)
+	      			local!ble_activity(0)
+	      		`}`  
+	      	end  
+      end
+     
+   		transition -> Failed event Socket?Closed action print "[BLEGateway]: ERROR HCI Socket Closed \n"
+   		transition -> Quit event Signals?Interrupt
+   		
+   		transition -> Failed event mqtt?mqtt_disconnected action println "Exiting because of an MQTT Disconnect event."
+   }
+
+
+   // Failed somewhere
+    state Failed
+    {
+      on entry do
+      	
+      	local!ble_error(0)
+      
+      	//localmqtt!bpsensor_error()
+      	//localmqtt!bpsensor_gw_exit()
+		Socket!Close()
+      	//Scanner!Stop()
+        print "[ERROR]: Failed, quitting... !!!\n"
+        print "[ERROR]: Sending Quit\n"
+        Signals!Quit(1) // This is a sync call. It should cleanup and exit. It seems that in some cases the cleanup fails and it does not exit.
+        error "[ERROR]: Quit was sent but it did not happen, exiting the hard way.\n"
+        `exit(1);`  // Make sure we do not hang here.
+      end
+      
+      internal event Signals?Interrupt action Signals!Quit(1)
+      
+    }
+
+    // Normal QUIT
+    state Quit 
+    {
+      on entry do
+        print "[INFO]: Finished, quitting...\n"
+        Socket!Close()
+        //localmqtt!bpsensor_gw_exit()
+        //Scanner!Stop()
+        print "[INFO]: Sending Quit\n"
+        Signals!Quit(0) // This is a sync call. It should cleanup and exit. It seems that in some cases the cleanup fails and it does not exit.
+        error "[ERROR]: Quit was sent but it did not happen, exiting the hard way.\n"
+        `exit(1);` // Make sure we do not hang here.
+      end
+      
+      internal event Signals?Interrupt action Signals!Quit(1)
+    }
+  }
+}
+
+configuration BLEGateway
+	@compiler "posix"
+	@add_c_libraries "bluetooth"
+	@add_c_libraries "mosquitto"
+	@add_c_modules "jsmn"
+	@add_c_libraries "confuse"
+	//@debug "true"
+	//@debug_fifo "true"
+{
+
+  instance main                   : Main
+  
+  instance handler : ExitHandler
+  instance hci : HCISocketProxyImpl
+  
+  instance mqttadapter : PosixMQTTAdapter
+  instance mqttserializer : BLEGatewayPortExt_PosixMqttJson_Impl
+  set mqttserializer.mqtt_topic_name = "TelluGW"
+  
+  instance timer : TimerPosix
+  
+  connector main.clock => timer.timer
+  
+  connector mqttserializer.posixmqtt => mqttadapter.mqtt
+  connector main.mqtt => mqttadapter.mqtt
+  connector main.local => mqttserializer.localext 
+  
+  // Not needed but the code generator needs it 
+  connector main.ATT => hci.ATT
+  connector main.SMP => hci.SMP
+
+  connector main.Signals => handler.Signals
+  
+  connector main.Socket => hci.Socket
+  connector main.HCICommands => hci.Commands
+  connector main.HCIEvents => hci.Events
+
+  set hci.Device = "hci0" 
+}

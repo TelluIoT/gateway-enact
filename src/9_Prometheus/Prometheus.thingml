@@ -1,0 +1,506 @@
+import "timer.thingml" from stl 
+import "../3_CloudAgent/LocalPortExtPosixMqttJson.thingml"
+
+thing Prometheus includes TimerMsgs, MQTTAdapterMsgs, LocalPort
+@c_header `#include <microhttpd.h>"`
+@c_header `#include <stdlib.h>` 
+@c_header `#include <string.h>`
+@c_header `#include <stdio.h>`
+@c_header `#include "uthash.h"`
+
+@c_header `#include <errno.h>`
+@c_header `#include <linux/unistd.h>       /* for _syscallX macros/related stuff */`
+@c_header `#include <linux/kernel.h>       /* for struct sysinfo */`
+@c_header `#include <sys/sysinfo.h>`
+@c_header `#include <sys/statvfs.h>`
+
+@c_global `char mon_info[2048];`
+
+@c_global `
+
+#define PAGE "<html><head><title>libmicrohttpd demo</title>"\
+             "</head><body>libmicrohttpd demo</body></html>"
+
+struct MHD_Daemon * httpdaemon;
+
+static int ahc_echo(void * cls,
+		    struct MHD_Connection * connection,
+		    const char * url,
+		    const char * method,
+                    const char * version,
+		    const char * upload_data,
+		    size_t * upload_data_size,
+                    void ** ptr) {
+  static int dummy;
+  const char * page = cls;
+  struct MHD_Response * response;
+  int ret;
+
+  if (0 != strcmp(method, "GET"))
+    return MHD_NO; /* unexpected method */
+  if (&dummy != *ptr)
+    {
+      /* The first time only the headers are valid,
+         do not respond in the first round... */
+      *ptr = &dummy;
+      return MHD_YES;
+    }
+  if (0 != *upload_data_size)
+    return MHD_NO; /* upload data in a GET!? */
+  *ptr = NULL; /* clear context pointer */
+  response = MHD_create_response_from_buffer (strlen(page),
+                                              (void*) page,
+  					      MHD_RESPMEM_PERSISTENT);
+  ret = MHD_queue_response(connection,
+			   MHD_HTTP_OK,
+			   response);
+  MHD_destroy_response(response);
+  return ret;
+}
+
+
+struct ruuvi_struct {
+    uint32_t deviceID;		/* key */
+    char btaddr[18];
+    uint64_t timestamp;
+    uint8_t humidity;
+    int32_t temperature;
+    int32_t pressure;
+    uint8_t rssi;
+    int16_t ax;
+    int16_t ay;
+    int16_t az;
+    uint16_t battery;
+    uint16_t frames;
+    UT_hash_handle hh;		/* makes this structure hashable */
+};
+
+struct ruuvi_struct *ruuvis = NULL;    /* must initialize to NULL */
+
+#define DATA_MAX_SIZE 64*1024	// 64k of data is the max
+char prometheus_data[DATA_MAX_SIZE]; 
+
+struct Prometheus_Instance* __instance_var;
+
+`
+{
+	readonly property build_version : String = "__NO_BUILD_VERSION__"
+	readonly property timer_id : UInt8 = 1
+	
+	readonly property ruuvi_timeout_sec : UInt16 = 30
+	
+	readonly property local_client_id : String = "P4Prometheus"
+	property local_broker_host : String = "localhost"
+	property local_broker_port : UInt16 = 1883
+	
+	required port clock {
+		receives timer_timeout
+		sends timer_start, timer_cancel
+	}
+	
+	required port localmqtt 
+	@sync_send "true" // Some of the messages pass pointers (Strings) which should not be put on the FIFO
+	{
+		sends mqtt_connect, mqtt_disconnect, mqtt_set_credentials, mqtt_set_prefix
+		receives mqtt_connected, mqtt_disconnected
+	} 
+	
+	function getEpochTimeStamp() : UInt64 do
+		 // Read the UTC time
+	     `time_t utc = time(NULL);`
+	     return `utc` as UInt64
+	end
+	
+	function updatePrometheusString() do
+		
+		// Format Prometheus String
+		`uint32_t len = 0;`
+		`struct ruuvi_struct *r;`
+		
+		// Frame Count
+		`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, 
+			"# HELP ruuvi_frames_total Total Ruuvi frames received\n");`
+		`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, 
+			"# TYPE ruuvi_frames_total counter\n");`
+	    `for(r=ruuvis; r != NULL; r=r->hh.next) len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, 
+			"ruuvi_frames_total{device=\"%s\"} %d\n", r->btaddr, r->frames);`
+		
+		// RSSI
+		`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, 
+			"# HELP ruuvi_rssi_dbm Ruuvi tag received signal strength RSSI (dbm)\n");`
+		`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, 
+			"# TYPE ruuvi_rssi_dbm gauge\n");`
+	    `for(r=ruuvis; r != NULL; r=r->hh.next) len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, 
+			"ruuvi_rssi_dbm{device=\"%s\"} %d\n", r->btaddr, r->rssi);`
+		
+		// Battery
+		`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, 
+			"# HELP ruuvi_battery_mvolts Ruuvi tag battery voltage (mV)\n");`
+		`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, 
+			"# TYPE ruuvi_battery_mvolts gauge\n");`
+	    `for(r=ruuvis; r != NULL; r=r->hh.next) len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, 
+			"ruuvi_battery_mvolts{device=\"%s\"} %d\n", r->btaddr, r->battery);`
+			
+		// Temperature
+		`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, 
+			"# HELP ruuvi_temperature_celsius Ruuvi tag sensor temperature (C x100)\n");`
+		`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, 
+			"# TYPE ruuvi_temperature_celsius gauge\n");`
+	    `for(r=ruuvis; r != NULL; r=r->hh.next) len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, 
+			"ruuvi_temperature_celsius{device=\"%s\"} %d\n", r->btaddr, r->temperature);`
+			
+		// Humidity
+		`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, 
+			"# HELP ruuvi_relative_humidity Ruuvi tag sensor relative humidity (%RH)\n");`
+		`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, 
+			"# TYPE ruuvi_relative_humidity gauge\n");`
+	    `for(r=ruuvis; r != NULL; r=r->hh.next) len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, 
+			"ruuvi_relative_humidity{device=\"%s\"} %d\n", r->btaddr, r->humidity);`
+			
+		// Pressure
+		`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, 
+			"# HELP ruuvi_pressure_pa Ruuvi tag sensor air pressure (Pa)\n");`
+		`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, 
+			"# TYPE ruuvi_pressure_pa gauge\n");`
+	    `for(r=ruuvis; r != NULL; r=r->hh.next) len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, 
+			"ruuvi_pressure_pa{device=\"%s\"} %d\n", r->btaddr, r->pressure);`
+			
+		// Accelerometer
+		`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, 
+			"# HELP ruuvi_acceleration_g Ruuvi tag sensor acceleration X/Y/Z\n");`
+		`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, 
+			"# TYPE ruuvi_acceleration_g gauge\n");`
+	    `for(r=ruuvis; r != NULL; r=r->hh.next) len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, 
+			"ruuvi_acceleration_g{axis=\"X\",device=\"%s\"} %d\n", r->btaddr, r->ax);`
+		`for(r=ruuvis; r != NULL; r=r->hh.next) len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, 
+			"ruuvi_acceleration_g{axis=\"Y\",device=\"%s\"} %d\n", r->btaddr, r->ay);`
+		`for(r=ruuvis; r != NULL; r=r->hh.next) len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, 
+			"ruuvi_acceleration_g{axis=\"Z\",device=\"%s\"} %d\n", r->btaddr, r->az);`
+			
+		// GPS data
+		var now : UInt64 = getEpochTimeStamp()
+		
+		if (now - altitude_timestamp < 30) do // Do we have recent altitude data
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# HELP gps_altitude GPS Altitude\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# TYPE gps_altitude gauge\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "gps_altitude{} %f\n", `& altitude &`);`
+			
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# HELP gps_vspeed GPS Vertical Speed\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# TYPE gps_vspeed gauge\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "gps_vspeed{} %f\n", `& altitude_vspeed &`);`
+		end
+		
+		if (now - position_timestamp < 30) do // Do we have recent
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# HELP gps_position_latitude GPS Latitude\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# TYPE gps_position_latitude gauge\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "gps_position_latitude{} %f\n", `& latitude &`);`
+			
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# HELP gps_position_longitude GPS longitude\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# TYPE gps_position_longitude gauge\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "gps_position_longitude{} %f\n", `& longitude &`);`
+			
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# HELP gps_speed GPS speed\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# TYPE gps_speed gauge\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "gps_speed{} %f\n", `& speed &`);`
+		end
+		
+		if (now - gpsstatus_timestamp < 30) do // Do we have recent
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# HELP gps_status GPS Status\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# TYPE gps_status gauge\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "gps_status{} %d\n", `& gpsstatus &`);`
+			
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# HELP gps_satellites_visible GPS satellites_visible\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# TYPE gps_satellites_visible gauge\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "gps_satellites_visible{} %d\n", `& satellites_visible &`);`
+			
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# HELP gps_satellites_used GPS satellites_used\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# TYPE gps_satellites_used gauge\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "gps_satellites_used{} %d\n", `& satellites_used &`);`
+		end
+		
+		if (now - arduino_timestamp < 30) do // Do we have recent
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# HELP arduino_temp Temperature of the arduino board\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# TYPE arduino_temp gauge\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "arduino_temp{} %d\n", `& arduino_temp &`);`
+			
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# HELP arduino_psu Supply voltage of the arduino board\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# TYPE arduino_psu gauge\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "arduino_psu{} %d\n", `& arduino_psu &`);`
+		end
+		
+		if (now - adc_timestamp < 30) do // Do we have recent
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# HELP arduino_adc Raw adc values from the arduino\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# TYPE arduino_adc gauge\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "arduino_adc{channel=\"0\"} %d\n", `& arduino_adc[0] &`);`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "arduino_adc{channel=\"1\"} %d\n", `& arduino_adc[1] &`);`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "arduino_adc{channel=\"2\"} %d\n", `& arduino_adc[2] &`);`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "arduino_adc{channel=\"3\"} %d\n", `& arduino_adc[3] &`);`
+			
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# HELP gateway_psu Supply voltage of the gateway\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# TYPE gateway_psu gauge\n");`
+			`len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "gateway_psu{} %d\n", `& psu_voltage &`);`
+		end
+		
+
+		 
+		// Read RPI compute module CPU temperature 
+		`FILE *temperatureFile;
+		long cputemp = 0;
+		temperatureFile = fopen ("/sys/class/thermal/thermal_zone0/temp", "r");
+		if (temperatureFile == NULL) printf("[ERROR] Unable to read CPU temperature from /sys/class/thermal/thermal_zone0/temp\n");
+		else {
+			fscanf (temperatureFile, "%ld", &cputemp);
+			fclose (temperatureFile);
+			
+			len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# HELP gateway_cputemp CPU Temperature of the Compute Module\n");
+			len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "# TYPE gateway_cputemp gauge\n");
+			len += snprintf(prometheus_data+len, DATA_MAX_SIZE-1-len, "gateway_cputemp{} %d\n", cputemp);
+			
+			
+		}`
+		
+		/*
+		// Read sysinfo API to get Load, Memory usage and Uptime
+		`struct sysinfo s_info;
+		 int error = sysinfo(&s_info);
+		 if(error != 0)
+		 {
+		     printf("[ERROR] Unable to read sysinfo (errorcode = %d)\n", error);
+		 }`
+		
+		// Read filesystem info
+		`struct statvfs fsstat;
+		  
+		 error = statvfs("/", &fsstat);
+		 if (error != 0) {
+		   printf("[ERROR] Unable to read statvfs (errorcode = %d)\n", error);
+		 }
+		 
+		 unsigned long fs_bytes_available = fsstat.f_bavail;
+		 fs_bytes_available *= (fsstat.f_bsize / 1024);
+		 
+		 unsigned long fs_bytes_total = fsstat.f_blocks;
+		 fs_bytes_total *= (fsstat.f_frsize / 1024);
+		 
+		 unsigned long fs_inodes = fsstat.f_files;
+		 unsigned long fs_inodes_available = fsstat.f_favail;`
+		*/
+
+	end
+	
+	property altitude_timestamp : Long
+	property altitude : Double
+	property altitude_vspeed : Double
+	
+	property position_timestamp : Long
+	property latitude : Double
+	property longitude : Double
+	property speed : Double
+	
+	property gpsstatus_timestamp : Long
+	property gpsstatus : UInt8
+	property satellites_visible : UInt8
+	property satellites_used : UInt8
+	
+	// The vcc of the arduino. Useful to convert ADC reading to voltages
+	property arduino_timestamp : Long
+	property arduino_psu : UInt16 = 5000
+	property arduino_temp : UInt16 = 5000
+	
+	// The power input of the gateway is connected to A0 with a voltage divider (20k / 6.8k resistors)
+	// That makes sense_voltage = input_voltage / 3.937
+	// Calibration should be adjusted for more precise readings
+	property gateway_psu_sensor_cal : UInt16 = 3937
+	property psu_voltage : UInt16
+	property adc_timestamp : Long
+	property arduino_adc : UInt16[4]
+		
+	function respondToHttpRequest() : Integer
+	@c_prototype `int respondToHttpRequest(void *cls, struct MHD_Connection *connection,
+                          const char *url,
+                          const char *method, const char *version,
+                          const char *upload_data,
+                          size_t *upload_data_size, void **con_cls)`
+    @c_instance_var_name "__instance_var"
+	do
+		`struct MHD_Response *response;`
+		
+		updatePrometheusString()
+	  	
+	  	`response = MHD_create_response_from_buffer (strlen (prometheus_data), (void*) prometheus_data, MHD_RESPMEM_PERSISTENT);`
+      	var result : Integer = `MHD_queue_response(connection, MHD_HTTP_OK, response)`
+  	  	`MHD_destroy_response(response);`
+  		return result
+	end
+	
+	function initializeHTTPServer(httpport : UInt16) do
+	
+		`__instance_var = _instance;`
+		
+		`httpdaemon = MHD_start_daemon(MHD_USE_SELECT_INTERNALLY,
+							       `&httpport&`,
+							       NULL,
+							       NULL,
+							       &respondToHttpRequest,
+							       NULL,
+							       MHD_OPTION_END);`
+		
+		if (`httpdaemon == NULL`) do
+			error "ERROR: Could not start HTTP daemon on port ", httpport, "\n"
+			`exit(1);`
+		end
+		
+	end
+	
+	
+	statechart PC init Connect {
+		
+		on entry do
+			println "Starting Prometheus exporter..."
+		end
+		
+		state Connect {
+			on entry do
+				print "Connecting to local MQTT Broker..."
+				localmqtt!mqtt_connect(local_client_id, local_broker_host, local_broker_port, false)
+				initializeHTTPServer(8086)
+			end
+			
+			transition -> MQTTConnected event localmqtt?mqtt_connected action do println "OK" end
+		}
+		
+		state MQTTConnected {
+			
+			on entry do
+				clock!timer_start(timer_id, 10000)
+			end
+			
+			internal event localmqtt?mqtt_disconnected action do
+				println "Lost MQTT connection, exiting..."
+				`exit(0);`
+			end
+			
+			internal event e:clock?timer_timeout guard e.id == timer_id action do
+				// Check if some sensors should be removed
+				var ct : UInt64 = getEpochTimeStamp()
+				
+				`struct ruuvi_struct *r, *tmp;`
+				`HASH_ITER(hh, ruuvis, r, tmp) {`
+					if ( (ct-`r->timestamp`) > ruuvi_timeout_sec) do
+						// Delete this sensor
+						println "DROP Sensor ", `r->deviceID` as UInt32
+						`HASH_DEL(ruuvis, r);`  /* remove from the hash */
+    					`free(r);`            	/* free the memory  */
+					end
+				`}`
+				
+				clock!timer_start(timer_id, 10000)
+			end
+			
+			internal event e : local?ruuvi_measurement action do
+				//println "Got RUUVI ", e.deviceID, " t=", e.temperature
+				
+				// Check if we already have this sensor
+				
+				`struct ruuvi_struct *r;`
+				
+				var tdiff : UInt64 = 0
+				
+			    `HASH_FIND_INT(ruuvis, &`&e.deviceID&`, r);`  /* id already in the hash? */
+			    if (`r==NULL`) do
+			      `r = (struct ruuvi_struct *)malloc(sizeof *r);`
+			      `r->deviceID = `&e.deviceID&`;`
+			      `strncpy(&r->btaddr, `&e.blemac&`, 18);`
+			      `r->frames = 0;`
+			      `HASH_ADD_INT( ruuvis, deviceID, r );`  /* id: name of key field */
+			      print "NEW "
+			    end
+			    else do
+			    	tdiff = e.timestamp - `r->timestamp`
+			    end
+			    
+			    `r->timestamp = `&e.timestamp&`;`
+			    `r->temperature = `&e.temperature&`;`
+			    `r->pressure = `&e.pressure&`;`
+			    `r->humidity = `&e.humidity&`;`
+			    `r->rssi = `&e.rssi&`;`
+			    `r->ax = `&e.ax&`;`
+			    `r->ay = `&e.ay&`;`
+			    `r->az = `&e.az&`;`
+			    `r->battery = `&e.battery&`;`
+			    `r->frames++;`
+				
+				println "Sensor ", `r->btaddr` as String, "\t\tframes: ",  `r->frames` as UInt16, "\t\tdiff:", tdiff
+				
+			end
+			
+			internal event e : local?gps_altitude action do
+				altitude = e.altitude
+				altitude_timestamp = e.timestamp
+				altitude_vspeed = e.vspeed
+			end
+			
+			
+			
+			internal event e : local?gps_position action do
+				position_timestamp = e.timestamp
+				latitude = e.latitude
+				longitude = e.longitude
+				speed = e.speed
+			end
+			
+			
+			
+			internal event e : local?gps_status action do
+				gpsstatus_timestamp = e.timestamp
+				gpsstatus  = e.status
+				satellites_visible = e.satellites_visible
+				satellites_used = e.satellites_used
+			end
+			
+			
+			
+			internal event e : local?front_panel_hwmonitor action do
+				arduino_timestamp = getEpochTimeStamp()
+				arduino_psu = e.voltage
+				arduino_temp = e.temp
+			end
+			
+			internal event e : local?adc_values action do
+				adc_timestamp = getEpochTimeStamp()
+				arduino_adc[0] = e.a0
+				arduino_adc[1] = e.a1
+				arduino_adc[2] = e.a2
+				arduino_adc[3] = e.a3
+				var psu_factor : Long = (arduino_psu * gateway_psu_sensor_cal) / 1000
+				psu_voltage = (psu_factor * e.a0) / 1024
+			end
+				
+		}
+	}
+}
+
+configuration Prometheus
+	@compiler "posix"
+	@add_c_libraries "mosquitto"
+	@add_c_libraries "microhttpd"
+	@add_c_modules "jsmn"
+	@add_c_header "uthash"
+{
+	
+	instance timer : TimerPosix
+	
+	instance main : Prometheus
+		set main.timer_id = 1
+	
+	instance localmqttadapter : PosixMQTTAdapter
+	
+	instance gwserializer : LocalPortExt_PosixMqttJson_Impl 
+		set gwserializer.mqtt_topic_name = "TelluGW"
+		
+	connector gwserializer.posixmqtt => localmqttadapter.mqtt
+	
+	connector main.local => gwserializer.localext
+	connector main.localmqtt => localmqttadapter.mqtt
+	connector main.clock => timer.timer
+}

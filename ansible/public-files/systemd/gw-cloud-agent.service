@@ -1,0 +1,14 @@
+[Unit]
+Description=Service Running The Tellu Cloud Agent
+After=networking.service
+
+[Service]
+ExecStart=/home/pi/gateway-p4/@current/CloudAgent/CloudAgent
+Restart=always
+RestartSec=30
+StandardOutput=syslog
+StandardError=syslog
+
+[Install]
+WantedBy=multi-user.target
+

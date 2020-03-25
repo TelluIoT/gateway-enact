@@ -1,0 +1,14 @@
+[Unit]
+Description=Service Running The GPS Gateway
+After=networking.service
+
+[Service]
+ExecStart=/home/pi/gateway-p4/@current/GPSDClient/GPSDClient
+Restart=always
+RestartSec=60
+StandardOutput=syslog
+StandardError=syslog
+
+[Install]
+WantedBy=multi-user.target
+

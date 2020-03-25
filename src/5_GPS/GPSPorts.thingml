@@ -1,0 +1,17 @@
+import "GPSMsgs.thingml"
+
+thing GPSPort includes GPSMsgs {
+	
+	required port local {
+		sends  gps_status, gps_position, gps_altitude
+}
+
+
+}
+thing GPSPortExt includes GPSMsgs {
+	provided port localext 
+	@external "posixmqttjson"
+	{
+		receives gps_status, gps_position, gps_altitude
+	}
+}

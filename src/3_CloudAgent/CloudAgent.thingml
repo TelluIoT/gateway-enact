@@ -1,0 +1,386 @@
+import "timer.thingml" from stl
+
+import "../_lib/compulab/Compulab.thingml"
+
+import "CloudPortExtPosixMqttJson.thingml"
+import "LocalPortExtPosixMqttJson.thingml" 
+
+
+thing CloudAgent includes TimerMsgs, MQTTAdapterMsgs, LocalPort, CloudPort, CompulabMsgs
+@c_header `#include "jsmn.h"`
+@c_header `#include <confuse.h>` 
+@c_header `#include <stdlib.h>`
+@c_header `#include <signal.h>`
+@c_global `cfg_t *cfg;`
+
+@c_global `struct CloudAgent_Instance *_handler_instance;`
+{
+	
+	readonly property build_version : String = "__NO_BUILD_VERSION__"
+
+	readonly property config_file_name : String = "/etc/tellugw/gateway.conf" 	
+
+	readonly property timer_id : UInt8 = 1
+	readonly property sensor_timer_id : UInt8 = 2
+	
+	readonly property local_client_id : String = "P4CloudAgent"
+	property local_broker_host : String = "localhost"
+	property local_broker_port : UInt16 = 1883
+	
+	property mqtt_prefix : String = "Wrong/Prefix"
+	 
+	property remote_client_id : String = "P4GW-DefaultID"
+	property remote_broker_host : String = "mqtt.broker.com"
+	property remote_broker_port : UInt16 = 8883
+	
+	property cafile : String = `NULL`
+	property certfile : String = `NULL`
+	property keyfile : String = `NULL`
+	
+	required port leds 
+	@sync_send "true"
+	{
+		sends ledOn, ledOff, ledFlash, ledBlink
+	} 
+	
+	required port clock {
+		receives timer_timeout
+		sends timer_start, timer_cancel
+	}
+	
+	required port localmqtt 
+	@sync_send "true" // Some of the messages pass pointers (Strings) which should not be put on the FIFO
+	{
+		sends mqtt_connect, mqtt_disconnect, mqtt_set_credentials, mqtt_set_prefix
+		receives mqtt_connected, mqtt_disconnected
+	} 
+	
+	required port cloudmqtt 
+	@sync_send "true" // Some of the messages pass pointers (Strings) which should not be put on the FIFO
+	{
+		sends mqtt_connect, mqtt_disconnect, mqtt_set_tls_certificates, mqtt_set_prefix
+		receives mqtt_connected, mqtt_disconnected
+	}
+	
+	property pingseq : UInt16 = 0
+	
+	// Define the variables expected to be in the configuration file and their associated default values
+	function createConfiguration() do
+	
+		print "Creating configuration parameters\n"
+		`cfg_opt_t opts[] =
+	    {
+	        CFG_STR("gateway_id"			, "PGWT-DefaultID"			, CFGF_NONE),
+	        CFG_STR("edge_broker_host"		, "mqtt.broker.com"			, CFGF_NONE),
+	        CFG_INT("edge_broker_port"		, 8883						, CFGF_NONE),
+	        CFG_STR("edge_broker_cafile"	, "/no/cafile"				, CFGF_NONE),
+	        CFG_STR("edge_broker_certfile"	, "/no/certfile"			, CFGF_NONE),
+	        CFG_STR("edge_broker_keyfile"	, "/no/keyfile"				, CFGF_NONE),
+	        CFG_STR("edge_mqtt_prefix"		, "Wrong/Prefix"			, CFGF_NONE),
+	        CFG_END()
+	    };`
+	    
+	    // Create the configuration variable (allocate the configuration data structure)
+	    `cfg = cfg_init(opts, CFGF_NONE);`
+	end
+	
+	// free the configuration data structure
+	function freeConfiguration() `cfg_free(cfg);`
+	
+	function readConfiguration() do
+		// parse the configuration file
+		print "Reading configuration file.\n"
+	    if(`cfg_parse(cfg, `&config_file_name&`) == CFG_PARSE_ERROR`)
+	    	print "Error(s) in config file.\n"
+	   
+	    // Assign the corresponding properties 
+	   	remote_client_id = `cfg_getstr(cfg, "gateway_id")`
+	   	remote_broker_host = `cfg_getstr(cfg, "edge_broker_host")`
+	    remote_broker_port = `cfg_getint(cfg, "edge_broker_port")`
+	    cafile = `cfg_getstr(cfg, "edge_broker_cafile")`
+	    
+	    certfile = `cfg_getstr(cfg, "edge_broker_certfile")`
+	    keyfile = `cfg_getstr(cfg, "edge_broker_keyfile")`
+	    mqtt_prefix = `cfg_getstr(cfg, "edge_mqtt_prefix")`
+	    
+	end
+	
+	function getEpochTimeStamp() : UInt64 do
+		 // Read the UTC time
+         `time_t utc = time(NULL);`
+	     return `utc` as UInt64
+	end
+	
+	function setTelluCloudPrefix() do
+		`char prefix[256];`
+		`snprintf(prefix, 256, "%s/%s", `&mqtt_prefix&`, `&remote_client_id&`);`
+		
+		cloudmqtt!mqtt_set_prefix(`prefix`)
+	end
+	
+	function catch_sigint()
+	@c_prototype "void catch_sigint(int sig)"
+	@c_instance_var_name "_handler_instance"
+	@SuppressWarnings "Call"
+	do
+	  println "Caught SIGINT."
+	  beforeExit()
+	  `exit(0);`
+	end
+	  
+	function initializeExitHandler() do
+  		`_handler_instance = _instance;`
+    	`signal(SIGINT, catch_sigint);`
+  	end
+	
+	function beforeExit() do
+		leds!ledOff(1)
+		leds!ledOff(2)
+	end
+	
+	property demo : Boolean = true
+	
+	
+	// Management of the sensors in order to not push more than 1 measurement per sensor per 10 sec
+	readonly property MAX_SENSORS : UInt8 = 16
+	readonly property MAX_RATE : UInt8 = 10
+	property sensor_ids : UInt32[16]
+	property sensor_timer : UInt8[16]
+		
+	function sensorCanPost(id : UInt32) : Boolean do
+		var result : Boolean = true
+		
+		var i : UInt8 = 0
+		while (i < MAX_SENSORS) do
+			if (sensor_ids[i] == id and sensor_timer[i] != 0) do
+				result = false
+			end
+			i = i + 1
+		end
+		
+		if (result) do
+			i=0
+			while (i < MAX_SENSORS) do
+				if (sensor_timer[i] == 0) do
+					sensor_ids[i] = id
+					sensor_timer[i] = MAX_RATE
+					i = MAX_SENSORS // Break the loop
+				end
+				i = i + 1
+			end
+		end
+		
+		return result
+	end
+	
+	function updateSensorTimers() do
+		var i : UInt8 = 0
+		while (i < MAX_SENSORS) do
+			if (sensor_timer[i] > 0) do
+				sensor_timer[i] = sensor_timer[i] - 1
+			end
+			i = i + 1
+		end
+	end
+	
+	
+	statechart TelluCloudAgentSC init Init {
+	
+		on entry do
+			initializeExitHandler()
+			createConfiguration()
+			readConfiguration()
+			leds!ledBlink(2, 100, 100) // Fast Blink
+			localmqtt!mqtt_connect(local_client_id, local_broker_host, local_broker_port, false)
+			setTelluCloudPrefix() 
+			cloudmqtt!mqtt_set_tls_certificates(cafile, `NULL` as String, certfile, keyfile)
+			cloudmqtt!mqtt_connect(remote_client_id, remote_broker_host, remote_broker_port, true)
+			clock!timer_start(sensor_timer_id, 1000)
+			
+		end
+		
+		internal event e : clock?timer_timeout guard e.id == sensor_timer_id action do
+			clock!timer_start(sensor_timer_id, 1000)
+			updateSensorTimers()
+		end
+		
+		internal event localmqtt?mqtt_connected action do
+			print "Local MQTT Broker Connected.\n"
+			leds!ledOff(2)
+		end
+		internal event localmqtt?mqtt_disconnected action do
+			print "Local MQTT Broker Disconnected.\n"
+			leds!ledBlink(2, 100, 100) // Fast Blink
+		end
+		
+		/************************************************************ */
+		/* FORWARD MESSAGES FROM THE LOCAL BROKER TO THE CLOUD BROKER */
+		/************************************************************ */
+		
+		
+		internal event e : local?ruuvi_measurement action do
+			if (sensorCanPost(e.deviceID)) do 
+				cloud!ruuvi_measurement(e.timestamp, e.blemac, e.deviceID, e.humidity, e.temperature, e.pressure, e.ax, e.ay, e.az, e.battery, e.rssi)
+				leds!ledFlash(2, 50)
+			end
+		end
+		
+		// The vcc of the arduino. Useful to convert ADC reading to voltages
+		property arduino_psu : UInt16 = 5000
+		
+		internal event e : local?front_panel_hwmonitor action do
+				cloud!front_panel_hwmonitor(e.temp, e.voltage)
+				arduino_psu = e.voltage
+		end
+		
+		// The power input of the gateway is connected to A0 with a voltage divider (20k / 6.8k resistors)
+		// That makes sense_voltage = input_voltage / 3.937
+		// Calibration should be adjusted for more precise readings
+		property gateway_psu_sensor_cal : UInt16 = 3937
+		
+		internal event e : local?adc_values action do
+				cloud!adc_values(e.a0, e.a1, e.a2, e.a3)
+				var psu_factor : Long = (arduino_psu * gateway_psu_sensor_cal) / 1000
+				var psu_voltage : UInt16 = (psu_factor * e.a0) / 1024
+				cloud!gateway_psu(psu_voltage)
+		end
+		
+		internal event e : local?gps_status action do
+			cloud!gps_status(e.timestamp as Long, e.status as UInt8, e.satellites_visible as UInt8, e.satellites_used as UInt8)
+			leds!ledFlash(2, 50)
+		end
+		
+		internal event e : local?gps_position action do
+			cloud!gps_position(e.timestamp as Long, e.gpstime as Long, 
+				e.latitude as Double, e.latitude_err as Double, e.longitude as Double, e.longitude_err as Double, 
+				e.speed as Double, e.speed_err as Double, e.track as Double, e.track_err as Double)
+			leds!ledFlash(2, 50)
+		end
+		
+		internal event e : local?gps_altitude action do
+			cloud!gps_altitude(e.timestamp as Long, e.altitude as Double, e.altitude_err as Double, e.vspeed as Double, e.vspeed_err as Double)
+			leds!ledFlash(2, 50)
+		end
+		
+		/************************************************************ */
+		/* FORWARD MESSAGES FROM THE CLOUD BROKER TO THE LOCAL BROKER */
+		/************************************************************ */
+	
+		state Init {
+			
+			on entry leds!ledBlink(1, 100, 100) // Fast Blink
+			transition -> Connected event cloudmqtt?mqtt_connected 
+			transition -> Disconnected event cloudmqtt?mqtt_disconnected 
+				
+		}
+		
+		state Disconnected {
+			
+			property timeout_count : UInt8 = 0
+			
+			on entry do 
+				timeout_count = 0
+				clock!timer_start(timer_id, 5000)
+				leds!ledBlink(1, 100, 100) // Fast Blink
+				print "Remote MQTT Broker Disconnected.\n"
+			end
+			
+			internal event e : clock?timer_timeout guard e.id == timer_id action do
+				timeout_count = timeout_count + 1
+				if (timeout_count > 60) do
+					println "Timeout waiting for cloud broker reconnection. Exiting."
+	 				beforeExit()
+	  				`exit(0);`
+				end
+			end
+			
+			transition -> Connected event cloudmqtt?mqtt_connected action clock!timer_cancel(timer_id)
+		}
+		
+		state Connected {
+			
+			property heartbeat_count : UInt8 = 0
+			property heartbeat_ack : Boolean = false
+			
+			on entry do
+				print "Remote MQTT Broker Connected.\n"
+				leds!ledBlink(1, 500, 500)
+				clock!timer_start(timer_id, 5000)
+			end
+			
+			
+			internal event e : clock?timer_timeout guard e.id == timer_id action do
+			
+				clock!timer_start(timer_id, 5000)
+				heartbeat_count = heartbeat_count + 1
+				if (heartbeat_count == 120) heartbeat_count = 0
+				
+				if (heartbeat_ack) leds!ledOn(1) // Solid
+				else leds!ledBlink(1, 500, 500)
+				heartbeat_ack = false
+				
+				cloud!gateway_heartbeat(getEpochTimeStamp(), heartbeat_count)
+			end
+			
+			internal event e : cloud?gateway_heartbeat_ack action do
+				if (e.incseq == heartbeat_count+1) heartbeat_ack = true
+				else heartbeat_ack = false
+			end
+			
+			transition -> Disconnected event cloudmqtt?mqtt_disconnected
+			
+			on exit clock!timer_cancel(timer_id)
+		}
+		
+		
+	}
+}
+
+configuration CloudAgent 
+	@add_c_libraries "mosquitto"
+	@add_c_modules "jsmn"
+	@add_c_libraries "confuse"
+	@add_c_libraries "wiringPi"
+{
+	instance timer : TimerPosix
+	
+	instance agent : CloudAgent
+		set agent.timer_id = 1
+		set agent.sensor_timer_id = 2
+		
+	instance localmqttadapter : PosixMQTTAdapter
+	instance remotemqttadapter : PosixMQTTAdapter
+		set remotemqttadapter.enable_tls_certificates = true
+		set remotemqttadapter.enable_tls = true
+		
+	instance gwserializer : LocalPortExt_PosixMqttJson_Impl 
+		set gwserializer.mqtt_topic_name = "TelluGW"
+	instance edgeserializer : CloudPortExt_PosixMqttJson_Impl
+		set edgeserializer.mqtt_topic_name = "CloudAgent"
+	
+	connector gwserializer.posixmqtt => localmqttadapter.mqtt
+	connector edgeserializer.posixmqtt => remotemqttadapter.mqtt
+	
+	connector agent.local => gwserializer.localext
+	connector agent.cloud => edgeserializer.cloudext
+	
+	connector agent.localmqtt => localmqttadapter.mqtt
+	connector agent.cloudmqtt => remotemqttadapter.mqtt
+	connector agent.clock => timer.timer
+	
+	instance led1 : LED
+		set led1.LED_ID = 1
+		set led1.timer_id = 3
+		set led1.LED_PIN = 45
+	connector led1.timer => timer.timer
+	connector agent.leds => led1.ctrl
+		
+	instance led2 : LED
+		set led2.LED_ID = 2
+		set led2.timer_id = 4
+		set led2.LED_PIN = 42
+	connector led2.timer => timer.timer
+	connector agent.leds => led2.ctrl
+	
+	
+}

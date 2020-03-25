@@ -1,0 +1,6 @@
+- import_playbook: ./playbooks/install_services_descriptions.yaml
+- import_playbook: ./playbooks/copy_local_build.yaml
+- import_playbook: ./playbooks/build_services.yaml
+- import_playbook: ./playbooks/switch_version.yaml
+- import_playbook: ./playbooks/upgrade_arduino_firmware.yaml
+- import_playbook: ./playbooks/enable_and_start_services.yaml

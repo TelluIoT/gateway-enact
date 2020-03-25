@@ -1,0 +1,211 @@
+import "timer.thingml" from stl 
+
+thing NetworkAgent includes TimerMsgs 
+@c_header `
+  #include <stdlib.h>`
+{
+	
+	readonly property build_version : String = "__NO_BUILD_VERSION__"
+	readonly property timer_id : UInt8 = 1
+	
+	readonly property INIT_RETRY_DELAY : Integer = 90
+	readonly property INIT_MAX_RETRY : Integer = 15
+	
+	readonly property MONITORING_INTERVAL : Integer = 60
+	readonly property MONITORING_ERROR_THRESHOLD : Integer = 15
+	
+	readonly property LOST_RETRY_DELAY : Integer = 120
+	readonly property LOST_MAX_RETRY : Integer = 6
+	
+	required port clock {
+		receives timer_timeout
+		sends timer_start, timer_cancel
+	}
+	
+	function checkNetwork() : Integer do
+		return `system("/etc/tellugw/scripts/check_network.sh")` as Integer
+	end
+	
+	function restartNetwork() : Integer do
+		return `system("/etc/tellugw/scripts/restart_network.sh")` as Integer
+	end
+	
+	function restartSystem() : Integer do
+		return `system("/etc/tellugw/scripts/restart_system.sh")` as Integer
+	end
+	
+	
+	statechart NetworkAgentSC init InitDelay {
+	
+	
+		// The agent is starting up at boot. Give 15 sec for other services and network to start.
+		state InitDelay {
+			
+			readonly property seconds : Integer = 15
+			property sec_count : Integer = 0
+	 		
+ 			on entry do
+ 				println "NetworkAgent service started. Waiting 15sec before checking connection." `fflush(stdout);`
+ 				sec_count = 0
+ 				clock!timer_start(timer_id, 1000)
+ 			end
+ 			
+ 			internal event e:clock?timer_timeout guard e.id == timer_id action do 
+ 				sec_count = sec_count + 1 
+ 				println "NetworkAgent sec_count: ", sec_count `fflush(stdout);`
+ 				clock!timer_start(timer_id, 1000) 
+ 			end
+ 			
+			transition -> NeverConnected guard sec_count >= seconds action do 
+				clock!timer_cancel(timer_id)
+				println "NetworkAgent starting..." `fflush(stdout);`
+			end
+		
+		}
+	
+		// The agent has never seen the system connected. If no connection is available, the network interface will be restarted
+		composite state NeverConnected init CheckNetwork {
+			
+			property connected : Boolean = false
+			property retries : Integer = 0
+			
+			on entry do
+				println "NetworkAgent checking for initial network connection." `fflush(stdout);`
+				
+				connected = false
+				retries = 0
+			end
+			
+			state CheckNetwork {
+				on entry if (checkNetwork() == 0) do
+					println "Found network." `fflush(stdout);`
+					connected = true
+				end
+				transition -> RestartNetwork guard not connected
+			}
+			
+			state RestartNetwork {
+				on entry do
+					retries = retries + 1
+					if (retries <= INIT_MAX_RETRY) do
+						println "No network detected. Running restart_network script. Attempt #", retries, "." `fflush(stdout);`
+						restartNetwork()
+					end
+					else do
+						println "No network detected. Reached maximum number of attempts. Restarting system." `fflush(stdout);`
+						restartSystem()
+					end
+				end
+				transition -> Waiting
+			}
+			
+			state Waiting {
+				readonly property seconds : Integer = INIT_RETRY_DELAY
+				property sec_count : Integer = 0
+	 			on entry do
+	 				sec_count = 0
+	 				clock!timer_start(timer_id, 1000)
+	 			end
+	 			internal event e:clock?timer_timeout guard e.id == timer_id action do sec_count = sec_count + 1 clock!timer_start(timer_id, 1000) end
+				transition -> CheckNetwork guard sec_count >= seconds action clock!timer_cancel(timer_id)
+			}
+			
+			
+			transition -> Monitoring guard connected
+			
+		}
+		
+		composite state Monitoring init Waiting {
+			
+			property error_count : Integer = 0
+			
+			on entry do
+				println "Network connected. Monitoring connection." `fflush(stdout);`
+				error_count = 0
+			end
+			
+			// 1 min delay
+			state Waiting {
+				readonly property seconds : Integer = MONITORING_INTERVAL
+				property sec_count : Integer = 0
+	 			on entry do
+	 				sec_count = 0
+	 				clock!timer_start(timer_id, 1000)
+	 			end
+	 			internal event e:clock?timer_timeout guard e.id == timer_id action do sec_count = sec_count + 1 clock!timer_start(timer_id, 1000) end
+				transition -> CheckNetwork guard sec_count >= seconds action clock!timer_cancel(timer_id)
+			}
+			
+			state CheckNetwork {
+				on entry 
+					if (checkNetwork() == 0) do
+						error_count = 0 // Reset the number of errors
+						println "Network checked OK." `fflush(stdout);`
+					end
+					else do
+						error_count = error_count + 1 // Increment the number of errors
+						println "Network is unstable. Error count: ", error_count, "." `fflush(stdout);`
+					end
+				
+				transition -> Waiting 
+			}
+			
+			transition -> ConnectionLost guard error_count > MONITORING_ERROR_THRESHOLD 
+			
+		}
+		
+		composite state ConnectionLost init RestartNetwork {
+			
+			property connected : Boolean = false
+			property retries : Integer = 0
+			
+			on entry do
+				println "Network connection has been lost." `fflush(stdout);`
+				connected = false
+				retries = 0
+			end
+			
+			state CheckNetwork {
+				on entry if (checkNetwork() == 0) connected = true
+				transition -> RestartNetwork guard not connected 
+			}
+			
+			state RestartNetwork {
+				on entry do
+					retries = retries + 1
+					if (retries <= LOST_MAX_RETRY) do
+						println "Network lost. Running restart_network script. Attempt #", retries, "." `fflush(stdout);`
+						restartNetwork()
+					end
+					else do
+						println "Network lost. Reached maximum number of attempts. Restarting system." `fflush(stdout);`
+						restartSystem()
+					end
+				end
+				transition -> Waiting
+			}
+			
+			state Waiting {
+				readonly property seconds : Integer = LOST_RETRY_DELAY
+				property sec_count : Integer = 0
+	 			on entry do
+	 				sec_count = 0
+	 				clock!timer_start(timer_id, 1000)
+	 			end
+	 			internal event e:clock?timer_timeout guard e.id == timer_id action do sec_count = sec_count + 1 clock!timer_start(timer_id, 1000) end
+				transition -> CheckNetwork guard sec_count >= seconds action clock!timer_cancel(timer_id)
+			}
+			
+			transition -> Monitoring guard connected
+		}
+	}
+}
+
+configuration NetworkAgent 
+
+{
+	instance na : NetworkAgent
+		set na.timer_id = 1
+	instance t : TimerPosix
+	connector na.clock => t.timer
+}

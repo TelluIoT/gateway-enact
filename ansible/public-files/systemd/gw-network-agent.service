@@ -1,0 +1,15 @@
+[Unit]
+Description=Service to detect and repair networking issues
+After=networking.service
+
+[Service]
+Type=simple
+ExecStart=/home/pi/gateway-p4/@current/NetworkAgent/NetworkAgent
+Restart=always
+RestartSec=30
+StandardOutput=syslog
+StandardError=syslog
+
+[Install]
+WantedBy=multi-user.target
+

@@ -1,0 +1,11 @@
+import "datatypes.thingml" from stl
+
+thing CompulabMsgs {
+	
+	message ledOn(led : UInt8)
+	message ledOff(led : UInt8)
+	message ledBlink(led : UInt8, t1: UInt16, t2: UInt16)
+	message ledFlash(led : UInt8, duration : UInt16)
+	
+	
+}

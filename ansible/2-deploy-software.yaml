@@ -1,0 +1,4 @@
+ - import_playbook: ./playbooks/2-1-docker_containers.yaml
+ - import_playbook: ./playbooks/3-1-download_release.yaml
+ - import_playbook: ./playbooks/3-2-deploy_release.yaml
+ 

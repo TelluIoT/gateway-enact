@@ -1,0 +1,58 @@
+
+- hosts: gateways
+  tasks:
+
+    - name: Load Gateway Version
+      include_vars: ../public-files/gateway_version.yaml
+
+    - name: Stop gateway services
+      systemd:
+        name: "{{ item }}"
+        state: stopped
+      with_items:
+        # - gw-cloud-agent
+        - gw-bluetooth
+        - gw-gps
+        - gw-sensor-bridge
+        - gw-network-agent
+        - gw-prometheus
+
+    - name: Switch version
+      file:
+        src: "/home/pi/gateway-p4/{{ gateway_version }}"
+        dest: /home/pi/gateway-p4/@current
+        state: link
+
+    - name: Check if an arduino is connected
+      stat:
+        path: /dev/ttyFPSerial
+      register: arduino_serial
+
+    - name: Flashing the arduino
+      when: arduino_serial.stat.exists
+      command: "avrdude -v -p atmega328p -c arduino -P /dev/ttyFPSerial -b 115200 -D -U flash:w:/home/pi/gateway-p4/{{ gateway_version }}/DummySensor/DummySensor.ino.hex"
+
+    - name: Wait 3 second for the arduino to start
+      when: arduino_serial.stat.exists
+      pause:
+        seconds: 3
+
+    - name: USB Reset the arduino (2341:0001) - Change the device ID if using a different Arduino
+      when: arduino_serial.stat.exists
+      command: "usbreset  2341:0001"
+      become: true
+
+    - name: Enable and start gateway services
+      systemd:
+        name: "{{ item }}"
+        enabled: yes
+        daemon_reload: yes
+        state: restarted
+      with_items:
+        # - gw-cloud-agent
+        - gw-bluetooth
+        - gw-gps
+        - gw-sensor-bridge
+        - gw-network-agent
+        - gw-prometheus
+        
