@@ -72,3 +72,17 @@
       volumes:
         - /etc/tellugw/prometheus.yml:/etc/prometheus/prometheus.yml
         - /var/prometheus:/prometheus
+
+  # Deploy NodeRed
+  - name: Install NodeRed
+    docker_container:
+      name: node-red
+      image: nodered/node-red:latest
+      networks:
+      - name: gatewaynet
+      restart_policy: unless-stopped
+      ports:
+        - "1880:1880" # Web interface
+      log_driver: "json-file"
+      log_options:
+        max-size: 10m # Limit log size

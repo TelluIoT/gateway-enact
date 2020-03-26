@@ -1,0 +1,84 @@
+[
+    {
+        "id": "4fcfef5e.97f76",
+        "type": "tab",
+        "label": "Led Control",
+        "disabled": false,
+        "info": ""
+    },
+    {
+        "id": "4a31c938.c8ac88",
+        "type": "mqtt out",
+        "z": "4fcfef5e.97f76",
+        "name": "",
+        "topic": "TelluGW/set_digital_output",
+        "qos": "",
+        "retain": "",
+        "broker": "20f235a5.14604a",
+        "x": 600,
+        "y": 220,
+        "wires": []
+    },
+    {
+        "id": "fd6d290c.16ade8",
+        "type": "inject",
+        "z": "4fcfef5e.97f76",
+        "name": "Led On",
+        "topic": "",
+        "payload": "{\"pin\":6, \"value\":1}",
+        "payloadType": "json",
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "x": 330,
+        "y": 140,
+        "wires": [
+            [
+                "4a31c938.c8ac88"
+            ]
+        ]
+    },
+    {
+        "id": "c8fc8e6f.60a0f",
+        "type": "inject",
+        "z": "4fcfef5e.97f76",
+        "name": "Led Off",
+        "topic": "",
+        "payload": "{\"pin\":6, \"value\":0}",
+        "payloadType": "json",
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "x": 330,
+        "y": 300,
+        "wires": [
+            [
+                "4a31c938.c8ac88"
+            ]
+        ]
+    },
+    {
+        "id": "20f235a5.14604a",
+        "type": "mqtt-broker",
+        "z": "",
+        "name": "localhost",
+        "broker": "192.168.100.1",
+        "port": "1883",
+        "clientid": "",
+        "usetls": false,
+        "compatmode": false,
+        "keepalive": "60",
+        "cleansession": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthPayload": "",
+        "closeTopic": "",
+        "closeQos": "0",
+        "closePayload": "",
+        "willTopic": "",
+        "willQos": "0",
+        "willPayload": ""
+    }
+]
