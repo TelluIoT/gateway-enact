@@ -39,6 +39,12 @@ thing DummySensor includes SensorPort, ArduinoFunctions, TimerMsgs {
 			clock!timer_start(sensor_timer_id, sensor_interval)
 		end
 		
+		internal event e : gwserial?set_digital_output action do 
+			`pinMode(`&e.pin&`, OUTPUT);`
+			if (e.value > 0) `digitalWrite(`&e.pin&`, HIGH);`
+			else `digitalWrite(`&e.pin&`, LOW);`
+		end
+		
 		state GWDisconnected {
 			
 			on entry do

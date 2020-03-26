@@ -46,9 +46,12 @@ thing SensorBridge includes SensorBridgePort, SensorClientPort, TimerMsgs, MQTTA
 			
 			// Set sensor parameter
 			internal event e : fpmqtt?set_sensor_rate action fpserial!set_sensor_rate(e.ms)
+			
+			// Set sensor parameter
+			internal event e : fpmqtt?set_digital_output action fpserial!set_digital_output(e.pin, e.value)
 
 		}
-		
+		 
 		region LocalMQTTMonitor init DISCONNECTED {
 			state DISCONNECTED {
 				transition -> CONNECTED event mqtt?mqtt_connected
