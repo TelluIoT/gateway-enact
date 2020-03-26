@@ -127,8 +127,14 @@ The code for the different components is in the src directory. For building the 
 * Access Prometheus UI: http://192.168.1.170:9090/
 * Prometeus Exporter: http://192.168.1.170:8086/
 
-## 6. Adding a coimmand to the Arduino:
+## 6. Adding a command to the Arduino:
 
 This commit provides an example to add a basic actuation command to the arduino:
 
 https://github.com/TelluIoT/gateway-enact/commit/cd5f730c5a411faf9b95d60a2135654eb58d3e08
+
+## 7. Having fun with NodeRed
+NodeRed is now also deployed via docker on the gateway (http://192.168.1.170:1880/).
+
+A demo flow showing how to send commands to the MQTT broker is in `ansible/public-files/nodered/flow.json`.
+
